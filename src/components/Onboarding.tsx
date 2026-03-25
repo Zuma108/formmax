@@ -56,24 +56,24 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       <div className="flex items-center gap-4 mb-8">
         <button 
           onClick={prevStep}
-          className="w-10 h-10 rounded-lg bg-[#F9FAFB] border border-gray-200 shadow-sm flex items-center justify-center active:scale-95 transition-transform shrink-0"
+          className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center active:scale-95 transition-transform shrink-0"
         >
-          <ArrowLeft className="w-5 h-5 text-[#1E1A24]" />
+          <ArrowLeft className="w-5 h-5 text-zinc-800" />
         </button>
         {/* Progress Bar (dynamically scaled) */}
-        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
           <motion.div 
             initial={{ width: `${((step - 1) / TOTAL_STEPS) * 100}%` }}
             animate={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
-            className="h-full bg-[#3B82F6]"
+            className="h-full bg-zinc-800"
           />
         </div>
       </div>
-      <h2 className="text-[32px] font-bold text-[#1E1A24] tracking-tight leading-tight mb-2">
+      <h2 className="text-3xl font-extrabold text-zinc-900 tracking-tight leading-tight mb-2">
         {title}
       </h2>
       {subtitle && (
-        <p className="text-[#6B7280] text-[16px] leading-relaxed">
+        <p className="text-zinc-500 text-base leading-relaxed">
           {subtitle}
         </p>
       )}
@@ -85,8 +85,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       <button 
         onClick={nextStep}
         disabled={disabled}
-        className={`w-full py-4 rounded-lg text-lg font-bold transition-all flex items-center justify-center gap-2 ${
-          disabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'btn-primary'
+        className={`w-full py-4 rounded-full text-lg font-bold transition-all flex items-center justify-center gap-2 ${
+          disabled ? 'bg-zinc-200 text-zinc-400' : 'btn-primary'
         }`}
       >
         {customText}
@@ -103,7 +103,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB]"
+      className="absolute inset-0 flex flex-col bg-white"
     >
       {/* Top half: Mockup style hero image placeholder */}
       <div className="flex-1 bg-[#f8f9fa] relative overflow-hidden flex flex-col pt-12">
@@ -114,16 +114,16 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </svg>
          </div>
          <div className="mt-auto px-6 pb-8 relative z-10 flex gap-4 overflow-x-hidden">
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex-1 min-w-[140px]">
+            <div className="bg-white p-4 rounded-3xl shadow-sm border border-zinc-100 flex-1 min-w-[140px]">
                <span className="text-2xl font-bold">95<span className="text-sm">%</span></span>
-               <p className="text-[#6B7280] text-xs mt-1">Form Match</p>
+               <p className="text-zinc-500 text-xs mt-1">Form Match</p>
                <div className="mt-3 w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
                  <ScanFace className="w-5 h-5 text-blue-500" />
                </div>
             </div>
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex-1 min-w-[140px]">
+            <div className="bg-white p-4 rounded-3xl shadow-sm border border-zinc-100 flex-1 min-w-[140px]">
                <span className="text-2xl font-bold">12<span className="text-sm font-medium ml-1">reps</span></span>
-               <p className="text-[#6B7280] text-xs mt-1">Consistent Pace</p>
+               <p className="text-zinc-500 text-xs mt-1">Consistent Pace</p>
                <div className="mt-3 w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
                  <Activity className="w-5 h-5 text-emerald-500" />
                </div>
@@ -132,7 +132,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       </div>
 
       <div className="px-8 pt-10 pb-12 flex flex-col items-center text-center">
-        <h1 className="text-4xl font-extrabold tracking-tight text-[#1E1A24] mb-8 leading-tight">
+        <h1 className="text-4xl font-extrabold tracking-tight text-zinc-900 mb-8 leading-tight">
           Perfect form<br/>made easy
         </h1>
         <button 
@@ -141,8 +141,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         >
           Get Started
         </button>
-        <p className="mt-6 text-[#6B7280] text-sm">
-          Already have an account? <button onClick={onComplete} className="text-black font-semibold underline underline-offset-4 decoration-2">Sign in</button>
+        <p className="mt-6 text-zinc-500 text-sm">
+          Already have an account? <span className="text-black font-semibold underline underline-offset-4 decoration-2">Sign in</span>
         </p>
       </div>
     </motion.div>
@@ -154,7 +154,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB]"
+      className="absolute inset-0 flex flex-col bg-white"
     >
       {renderHeader("Choose your Gender", "This will be used to calibrate your biomechanics model.")}
       <div className="px-6 flex flex-col gap-4">
@@ -164,7 +164,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onClick={() => setAnswers({ ...answers, gender: option })}
             className={`py-5 rounded-lg w-full text-lg ${
               answers.gender === option 
-                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] font-bold bg-[#F9FAFB] shadow-sm' 
+                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] font-bold bg-white shadow-sm' 
                 : 'btn-secondary'
             }`}
           >
@@ -182,7 +182,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Primary Fitness Goal", "What are you trying to achieve?")}
       <div className="px-6 flex flex-col gap-3">
@@ -197,12 +197,12 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onClick={() => setAnswers({ ...answers, goal: item.id })}
             className={`py-5 px-6 rounded-lg w-full text-left flex flex-col gap-1 ${
                answers.goal === item.id 
-                 ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-[#F9FAFB] shadow-sm' 
-                 : 'btn-secondary text-[#1E1A24]'
+                 ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-white shadow-sm' 
+                 : 'btn-secondary text-zinc-800'
              }`}
           >
             <span className="font-bold text-lg">{item.id}</span>
-            <span className={`text-sm ${answers.goal === item.id ? 'text-[#3B82F6]' : 'text-[#6B7280]'}`}>{item.desc}</span>
+            <span className={`text-sm ${answers.goal === item.id ? 'text-zinc-600' : 'text-zinc-500'}`}>{item.desc}</span>
           </button>
         ))}
       </div>
@@ -216,7 +216,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Current Training Split", "How do you organize your workouts?")}
       <div className="px-6 flex flex-col gap-3">
@@ -226,8 +226,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onClick={() => setAnswers({ ...answers, split: option })}
             className={`py-5 px-6 rounded-lg w-full text-left font-semibold ${
                answers.split === option 
-                 ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-[#F9FAFB] shadow-sm' 
-                 : 'btn-secondary text-[#1E1A24]'
+                 ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-white shadow-sm' 
+                 : 'btn-secondary text-zinc-800'
              }`}
           >
             {option}
@@ -244,7 +244,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB]"
+      className="absolute inset-0 flex flex-col bg-white"
     >
       {renderHeader("Experience Level", "How long have you been lifting consistently?")}
       <div className="px-6 flex flex-col gap-4">
@@ -258,12 +258,12 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onClick={() => setAnswers({ ...answers, experience: item.id })}
             className={`py-5 px-6 rounded-lg w-full flex justify-between items-center ${
               answers.experience === item.id 
-                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] font-bold bg-[#F9FAFB] shadow-sm' 
+                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] font-bold bg-white shadow-sm' 
                 : 'btn-secondary'
             }`}
           >
             <span className="text-lg font-semibold">{item.id}</span>
-            <span className="text-[#6B7280]">{item.desc}</span>
+            <span className="text-zinc-500">{item.desc}</span>
           </button>
         ))}
       </div>
@@ -277,7 +277,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Workout Frequency", "How many days per week are you lifting?")}
       <div className="px-6 flex flex-col gap-4">
@@ -289,18 +289,18 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           <button
             key={option.title}
             onClick={() => setAnswers({ ...answers, frequency: option.title })}
-            className={`p-6 rounded-lg w-full flex items-center gap-6 text-left ${
+            className={`p-6 rounded-3xl w-full flex items-center gap-6 text-left ${
               answers.frequency === option.title 
-                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-[#F9FAFB] shadow-sm' 
+                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-white shadow-sm' 
                 : 'btn-secondary'
             }`}
           >
-            <div className="w-10 h-10 rounded-full bg-[#F9FAFB] border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-full bg-white border border-zinc-200 shadow-sm flex items-center justify-center shrink-0">
                <span className="text-xl leading-none -mt-1 font-bold">{option.icon}</span>
             </div>
             <div>
-              <h3 className="font-bold text-lg text-[#1E1A24]">{option.title}</h3>
-              <p className="text-sm font-medium text-[#6B7280] mt-1">{option.desc}</p>
+              <h3 className="font-bold text-lg text-zinc-900">{option.title}</h3>
+              <p className="text-sm font-medium text-zinc-500 mt-1">{option.desc}</p>
             </div>
           </button>
         ))}
@@ -317,7 +317,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Form Focus Areas", "Which lifts do you want to improve most? (Select multiple)")}
       <div className="px-6 grid grid-cols-2 gap-3">
@@ -327,8 +327,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onClick={() => toggleArrayItem('focusAreas', option)}
             className={`py-4 px-4 rounded-lg w-full text-center font-semibold text-sm transition-all ${
                answers.focusAreas.includes(option)
-                 ? 'bg-[#3B82F6] text-white shadow-md' 
-                 : 'btn-secondary text-[#1E1A24]'
+                 ? 'bg-zinc-900 text-white shadow-md' 
+                 : 'btn-secondary text-zinc-800'
              }`}
           >
             {option}
@@ -345,7 +345,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Any Pain Points?", "Knowing your injury history helps the AI tailor form corrections. (Select multiple)")}
       <div className="px-6 grid grid-cols-2 gap-3">
@@ -364,8 +364,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             }}
             className={`py-4 px-4 rounded-lg w-full flex items-center justify-between font-semibold text-sm transition-all ${
                answers.injuries.includes(option)
-                 ? 'bg-[#3B82F6] text-white shadow-md' 
-                 : 'btn-secondary text-[#1E1A24]'
+                 ? 'bg-zinc-900 text-white shadow-md' 
+                 : 'btn-secondary text-zinc-800'
              }`}
           >
             {option}
@@ -383,7 +383,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("AI Coaching Style", "How do you want your feedback?")}
       <div className="px-6 flex flex-col gap-3">
@@ -397,12 +397,12 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onClick={() => setAnswers({ ...answers, feedbackStyle: item.id })}
             className={`py-5 px-6 rounded-lg w-full text-left flex flex-col gap-1 ${
                answers.feedbackStyle === item.id 
-                 ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-[#F9FAFB] shadow-sm' 
-                 : 'btn-secondary text-[#1E1A24]'
+                 ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] bg-white shadow-sm' 
+                 : 'btn-secondary text-zinc-800'
              }`}
           >
             <span className="font-bold text-lg">{item.title}</span>
-            <span className={`text-sm ${answers.feedbackStyle === item.id ? 'text-[#3B82F6]' : 'text-[#6B7280]'}`}>{item.desc}</span>
+            <span className={`text-sm ${answers.feedbackStyle === item.id ? 'text-zinc-600' : 'text-zinc-500'}`}>{item.desc}</span>
           </button>
         ))}
       </div>
@@ -416,20 +416,20 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Recording Setup", "How do you usually film your sets?")}
       <div className="px-6 flex flex-col gap-4">
         <button
           onClick={() => setAnswers({ ...answers, setupPref: 'Tripod' })}
-          className={`py-6 px-6 rounded-lg w-full flex items-center gap-5 ${
+          className={`py-6 px-6 rounded-3xl w-full flex items-center gap-5 ${
             answers.setupPref === 'Tripod' 
               ? 'btn-secondary selected-dark' 
               : 'btn-secondary'
           }`}
         >
-          <div className="w-12 h-12 rounded-full bg-[#F9FAFB]/20 flex items-center justify-center shrink-0">
-             <Smartphone className={`w-6 h-6 ${answers.setupPref === 'Tripod' ? 'text-white' : 'text-[#1E1A24]'}`} />
+          <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+             <Smartphone className={`w-6 h-6 ${answers.setupPref === 'Tripod' ? 'text-white' : 'text-zinc-800'}`} />
           </div>
           <div className="text-left">
             <h3 className="font-bold text-lg">Tripod / Prop</h3>
@@ -438,14 +438,14 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         </button>
         <button
           onClick={() => setAnswers({ ...answers, setupPref: 'Gym Buddy' })}
-         className={`py-6 px-6 rounded-lg w-full flex items-center gap-5 ${
+         className={`py-6 px-6 rounded-3xl w-full flex items-center gap-5 ${
             answers.setupPref === 'Gym Buddy' 
               ? 'btn-secondary selected-dark' 
               : 'btn-secondary'
           }`}
         >
-          <div className="w-12 h-12 rounded-full bg-[#F9FAFB]/20 flex items-center justify-center shrink-0">
-             <Camera className={`w-6 h-6 ${answers.setupPref === 'Gym Buddy' ? 'text-white' : 'text-[#1E1A24]'}`} />
+          <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+             <Camera className={`w-6 h-6 ${answers.setupPref === 'Gym Buddy' ? 'text-white' : 'text-zinc-800'}`} />
           </div>
           <div className="text-left">
             <h3 className="font-bold text-lg">Gym Buddy</h3>
@@ -463,30 +463,30 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB]"
+      className="absolute inset-0 flex flex-col bg-white"
     >
       {renderHeader("Have you used other form tracking apps?", "")}
       <div className="px-6 flex flex-col gap-4">
         <button
           onClick={() => setAnswers({ ...answers, triedApps: true })}
-          className={`py-5 px-6 rounded-lg w-full text-lg flex items-center gap-4 ${
+          className={`py-5 px-6 rounded-3xl w-full text-lg flex items-center gap-4 ${
             answers.triedApps === true 
               ? 'btn-secondary selected-dark' 
               : 'btn-secondary'
           }`}
         >
-          <ThumbsUp className={`w-6 h-6 ${answers.triedApps === true ? 'text-white' : 'text-[#1E1A24]'}`} />
+          <ThumbsUp className={`w-6 h-6 ${answers.triedApps === true ? 'text-white' : 'text-zinc-800'}`} />
           Yes
         </button>
         <button
           onClick={() => setAnswers({ ...answers, triedApps: false })}
-         className={`py-5 px-6 rounded-lg w-full text-lg flex items-center gap-4 ${
+         className={`py-5 px-6 rounded-3xl w-full text-lg flex items-center gap-4 ${
             answers.triedApps === false 
               ? 'btn-secondary selected-dark' 
               : 'btn-secondary'
           }`}
         >
-          <ThumbsDown className={`w-6 h-6 ${answers.triedApps === false ? 'text-white' : 'text-[#1E1A24]'}`} />
+          <ThumbsDown className={`w-6 h-6 ${answers.triedApps === false ? 'text-white' : 'text-zinc-800'}`} />
           No
         </button>
       </div>
@@ -500,7 +500,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Where did you hear about us?", "")}
       <div className="px-6 flex flex-col gap-3">
@@ -514,10 +514,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           <button
             key={option.name}
             onClick={() => setAnswers({ ...answers, source: option.name })}
-            className={`py-4 px-6 rounded-lg w-full flex items-center gap-4 text-left ${
+            className={`py-4 px-6 rounded-3xl w-full flex items-center gap-4 text-left ${
               answers.source === option.name 
-                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] font-bold bg-[#F9FAFB] shadow-sm' 
-                : 'btn-secondary text-[#1E1A24]'
+                ? 'border-2 border-[#3B82F6] bg-blue-50/20 text-[#3B82F6] font-bold bg-white shadow-sm' 
+                : 'btn-secondary text-zinc-800'
             }`}
           >
              <div className="w-8 h-8 flex items-center justify-center text-xl shrink-0">
@@ -539,37 +539,37 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
-      className="absolute inset-0 flex flex-col bg-[#F9FAFB] overflow-y-auto pb-24"
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
     >
       {renderHeader("Last step!", "Let's secure your progress.")}
       <div className="px-6 flex flex-col gap-4">
-         <div className="bg-white border border-gray-200 rounded-lg p-6 mb-4">
-            <h3 className="font-bold text-center text-[#1E1A24] mb-2">Build your AuraProfile</h3>
-            <p className="text-sm text-center text-[#6B7280] mb-6">Create an account to save your historical form scores and connect with the community.</p>
+         <div className="bg-zinc-50 border border-zinc-200 rounded-3xl p-6 mb-4">
+            <h3 className="font-bold text-center text-zinc-900 mb-2">Build your AuraProfile</h3>
+            <p className="text-sm text-center text-zinc-500 mb-6">Create an account to save your historical form scores and connect with the community.</p>
             
             <input 
               type="email" 
               placeholder="Email address"
               value={answers.email}
               onChange={(e) => setAnswers({...answers, email: e.target.value})}
-              className="w-full bg-[#F9FAFB] border border-gray-200 rounded-lg px-4 py-3 mb-3 text-[#1E1A24] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]"
+              className="w-full bg-white border border-zinc-300 rounded-xl px-4 py-3 mb-3 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
             />
             <input 
               type="password" 
               placeholder="Password"
-              className="w-full bg-[#F9FAFB] border border-gray-200 rounded-lg px-4 py-3 mb-4 text-[#1E1A24] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]"
+              className="w-full bg-white border border-zinc-300 rounded-xl px-4 py-3 mb-4 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
             />
          </div>
-         <p className="text-xs text-center text-gray-400">By continuing you agree to our Terms of Service and Privacy Policy for handling your biometric data.</p>
+         <p className="text-xs text-center text-zinc-400">By continuing you agree to our Terms of Service and Privacy Policy for handling your biometric data.</p>
       </div>
       <div className="mt-4">
-         {renderFooter(!answers.email.includes('@'), "Create Account & Enter App")}
+         {renderFooter(!answers.email.includes('@'), "Create Account")}
       </div>
     </motion.div>
   );
 
   return (
-    <div className="relative w-full h-[100dvh] bg-[#F9FAFB] overflow-hidden text-[#1E1A24] user-select-none">
+    <div className="relative w-full h-[100dvh] bg-white overflow-hidden text-zinc-900 user-select-none">
       <AnimatePresence mode="wait">
         {step === 0 && renderLanding()}
         {step === 1 && renderStep1()}
