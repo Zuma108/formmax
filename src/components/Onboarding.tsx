@@ -142,7 +142,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           Get Started
         </button>
         <p className="mt-6 text-[#6B7280] text-sm">
-          Already have an account? <span className="text-black font-semibold underline underline-offset-4 decoration-2">Sign in</span>
+          Already have an account? <button onClick={onComplete} className="text-black font-semibold underline underline-offset-4 decoration-2">Sign in</button>
         </p>
       </div>
     </motion.div>
@@ -563,7 +563,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
          <p className="text-xs text-center text-gray-400">By continuing you agree to our Terms of Service and Privacy Policy for handling your biometric data.</p>
       </div>
       <div className="mt-4">
-         {renderFooter(!answers.email.includes('@'), "Create Account")}
+         {renderFooter(!answers.email.includes('@'), "Create Account & Enter App")}
       </div>
     </motion.div>
   );

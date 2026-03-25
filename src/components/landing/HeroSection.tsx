@@ -70,28 +70,14 @@ export function HeroSection() {
         {/* Glow behind graph */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-blue-500/10 blur-[100px] pointer-events-none rounded-full" />
         
-        {/* Glassmorphic Container for the AuraGraph */}
-        <div className="relative w-full max-w-md bg-white/70 dark:bg-zinc-900/50 backdrop-blur-3xl border border-zinc-200 dark:border-white/10 rounded-[2.5rem] p-8 shadow-2xl dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_20px_40px_-15px_rgba(0,0,0,0.5)] flex flex-col items-center">
-          <div className="w-full flex justify-between items-center mb-6 px-2">
-             <div className="flex flex-col">
-               <span className="text-xs text-zinc-500 font-mono uppercase tracking-widest">Live Analysis</span>
-               <span className="text-sm text-zinc-900 dark:text-white font-medium">Conventional Deadlift</span>
-             </div>
-             <div className="px-3 py-1 bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20 rounded-full text-xs font-semibold tracking-tight">
-               83% Match
-             </div>
-          </div>
-          
-          <AuraGraph data={dummyAuraData} />
-
-          <div className="w-full mt-6 bg-zinc-50 dark:bg-zinc-950/50 border border-zinc-200 dark:border-white/5 rounded-2xl p-4 flex gap-4 items-center">
-            <div className="w-10 h-10 rounded-full bg-red-500/10 dark:bg-red-500/20 text-red-500 flex items-center justify-center flex-shrink-0">
-               !
-            </div>
-            <div className="flex flex-col">
-              <span className="text-zinc-900 dark:text-white text-sm font-medium tracking-tight">Priority Correction</span>
-              <span className="text-zinc-600 dark:text-zinc-400 text-xs">Lumbar flexion detected at 0:14. Brace core harder before pull.</span>
-            </div>
+        {/* Glassmorphic Container for the Hero Image */}
+        <div className="relative w-full max-w-md bg-white/70 dark:bg-zinc-900/50 backdrop-blur-3xl border border-zinc-200 dark:border-white/10 rounded-[2.5rem] p-4 shadow-2xl dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_20px_40px_-15px_rgba(0,0,0,0.5)] flex flex-col items-center overflow-hidden">
+          <div className="relative w-full aspect-[4/5] rounded-[2rem] overflow-hidden">
+            <img 
+              src="/assets/hero-section-image.webp" 
+              alt="Live Form Analysis" 
+              className="w-full h-full object-cover"
+            />
           </div>
         </div>
       </motion.div>
