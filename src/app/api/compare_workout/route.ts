@@ -1,0 +1,478 @@
+import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI, createPartFromText } from "@google/genai";
+import fs from "node:fs";
+import path from "node:path";
+import { EXERCISES, GENERIC_EXERCISE_PROMPT } from "@/lib/prompts";
+
+// Initialize Gemini SDK
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// --- Constants ---
+const MAX_VIDEO_DURATION_SECONDS = 60;
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
+const EMBEDDING_MODEL = "gemini-embedding-2-preview";
+const EMBEDDING_DIMENSIONS = 3072; // MRL — Matryoshka Representation Learning
+const ANALYSIS_MODEL_PRIMARY = "gemini-2.5-pro";
+const ANALYSIS_MODEL_FALLBACK = "gemini-2.5-flash";
+const REFERENCES_PATH = path.join(process.cwd(), "data", "references.json");
+
+type CheckpointEvaluation = {
+    name: string;
+    score: number;
+    feedback: string;
+};
+
+type BiomechanicsAnalysis = {
+    checkpoints: CheckpointEvaluation[];
+    overall_score: number;
+    top_priority: string;
+    positive: string;
+    injury_risk: "low" | "medium" | "high";
+};
+
+type RepEvaluation = {
+    rep_index: number;
+    score: number;
+    notes: string;
+};
+
+type QualityAndRepAnalysis = {
+    confidence_score: number;
+    confidence_label: "low" | "medium" | "high";
+    camera_angle_quality: number;
+    body_visibility_quality: number;
+    warnings: string[];
+    retake_guidance: string;
+    rep_scores: RepEvaluation[];
+    detected_rep_count: number;
+    consistency_summary: string;
+};
+
+type ReferenceEntry = {
+    name?: string;
+    embedding?: number[];
+    source_video?: string;
+    embedded_at?: string | null;
+    model?: string;
+    dimensions?: number;
+};
+
+function computeCosineSimilarity(vec1: number[], vec2: number[]): number {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vec1.length; i++) {
+        dotProduct += vec1[i] * vec2[i];
+        normA += vec1[i] * vec1[i];
+        normB += vec2[i] * vec2[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
+function normalizeExerciseKey(rawValue: string | null, fallback = "deadlift"): string {
+    if (!rawValue) return fallback;
+    const normalized = rawValue.trim().toLowerCase().replace(/\s+/g, "_");
+    return normalized || fallback;
+}
+
+function safeParseJson(text: string): unknown {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    const withoutFence = trimmed.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+    return JSON.parse(withoutFence);
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toStringArray(input: unknown): string[] {
+    if (!Array.isArray(input)) return [];
+    return input.map((item) => String(item)).filter((item) => item.trim().length > 0);
+}
+
+function toBiomechanicsAnalysis(input: unknown): BiomechanicsAnalysis {
+    if (!input || typeof input !== "object") {
+        throw new Error("Invalid analysis output");
+    }
+    const obj = input as Record<string, unknown>;
+    const checkpointsRaw = Array.isArray(obj.checkpoints) ? obj.checkpoints : [];
+
+    const checkpoints = checkpointsRaw
+        .map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const parsed = item as Record<string, unknown>;
+            const name = String(parsed.name ?? "Checkpoint").trim();
+            const scoreRaw = Number(parsed.score ?? 0);
+            const feedback = String(parsed.feedback ?? "").trim();
+            return {
+                name,
+                score: clamp(Number.isFinite(scoreRaw) ? scoreRaw : 0, 0, 100),
+                feedback,
+            } satisfies CheckpointEvaluation;
+        })
+        .filter((item): item is CheckpointEvaluation => Boolean(item));
+
+    if (checkpoints.length === 0) {
+        throw new Error("Model did not return checkpoint evaluations");
+    }
+
+    const overallRaw = Number(obj.overall_score ?? 0);
+    const injuryRaw = String(obj.injury_risk ?? "medium").toLowerCase();
+    const injuryRisk: "low" | "medium" | "high" = injuryRaw === "low" || injuryRaw === "high" ? injuryRaw : "medium";
+
+    return {
+        checkpoints,
+        overall_score: clamp(Number.isFinite(overallRaw) ? overallRaw : 0, 0, 100),
+        top_priority: String(obj.top_priority ?? "Focus on maintaining a neutral spine and steady bar path.").trim(),
+        positive: String(obj.positive ?? "Strong effort and intent visible across the set.").trim(),
+        injury_risk: injuryRisk,
+    };
+}
+
+function loadReferenceEmbedding(referenceId: string): { vector: number[]; source: string } {
+    if (!fs.existsSync(REFERENCES_PATH)) {
+        throw new Error("Missing references.json. Run the embedding script first.");
+    }
+
+    const fileData = JSON.parse(fs.readFileSync(REFERENCES_PATH, "utf-8")) as Record<string, ReferenceEntry>;
+    const preferred = fileData[referenceId];
+    const fallback = fileData.deadlift;
+    const selected = preferred ?? fallback;
+
+    if (!selected?.embedding || !Array.isArray(selected.embedding) || selected.embedding.length === 0) {
+        throw new Error(`No embedded reference found for '${referenceId}'. Run scripts/embed_reference.ts to generate it.`);
+    }
+
+    return {
+        vector: selected.embedding,
+        source: preferred ? referenceId : "deadlift",
+    };
+}
+
+function toQualityAndRepAnalysis(input: unknown): QualityAndRepAnalysis {
+    if (!input || typeof input !== "object") {
+        throw new Error("Invalid quality analysis output");
+    }
+
+    const obj = input as Record<string, unknown>;
+    const labelRaw = String(obj.confidence_label ?? "medium").toLowerCase();
+    const confidenceLabel: "low" | "medium" | "high" =
+        labelRaw === "low" || labelRaw === "high" ? labelRaw : "medium";
+
+    const repScoresRaw = Array.isArray(obj.rep_scores) ? obj.rep_scores : [];
+    const repScores = repScoresRaw
+        .map((item, index) => {
+            if (!item || typeof item !== "object") return null;
+            const parsed = item as Record<string, unknown>;
+            return {
+                rep_index: Math.max(1, Math.round(toNumber(parsed.rep_index, index + 1))),
+                score: clamp(toNumber(parsed.score, 0), 0, 100),
+                notes: String(parsed.notes ?? "").trim(),
+            } satisfies RepEvaluation;
+        })
+        .filter((item): item is RepEvaluation => Boolean(item));
+
+    return {
+        confidence_score: clamp(toNumber(obj.confidence_score, 65), 0, 100),
+        confidence_label: confidenceLabel,
+        camera_angle_quality: clamp(toNumber(obj.camera_angle_quality, 65), 0, 100),
+        body_visibility_quality: clamp(toNumber(obj.body_visibility_quality, 65), 0, 100),
+        warnings: toStringArray(obj.warnings),
+        retake_guidance: String(obj.retake_guidance ?? "Use a side view, keep full body and barbell in frame, and ensure clear lighting.").trim(),
+        rep_scores: repScores,
+        detected_rep_count: Math.max(repScores.length, Math.round(toNumber(obj.detected_rep_count, repScores.length))),
+        consistency_summary: String(obj.consistency_summary ?? "Rep quality remained stable across the set.").trim(),
+    };
+}
+
+function getCheckpointScore(checkpoints: CheckpointEvaluation[], keyIncludes: string): number {
+    const found = checkpoints.find((cp) => cp.name.toLowerCase().includes(keyIncludes));
+    return found ? found.score : 70;
+}
+
+function computeRepConsistency(repScores: RepEvaluation[]): number {
+    if (repScores.length === 0) return 70;
+    const values = repScores.map((rep) => rep.score);
+    const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    const spreadPenalty = clamp(stdDev * 1.3, 0, 25);
+    return clamp(avg - spreadPenalty, 0, 100);
+}
+
+function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis, quality: QualityAndRepAnalysis) {
+    const embeddingScore = clamp(((similarityCosine + 1) / 2) * 100, 0, 100);
+    const checkpointAverage = analysis.checkpoints.reduce((acc, cp) => acc + cp.score, 0) / analysis.checkpoints.length;
+
+    const spineScore = getCheckpointScore(analysis.checkpoints, "spine");
+    const barPathScore = getCheckpointScore(analysis.checkpoints, "bar path");
+    const hipHingeScore = getCheckpointScore(analysis.checkpoints, "hip hinge");
+    const eccentricScore = getCheckpointScore(analysis.checkpoints, "eccentric");
+
+    const checkpointConsistency = clamp((spineScore + barPathScore + eccentricScore) / 3, 0, 100);
+    const repConsistency = computeRepConsistency(quality.rep_scores);
+    const consistencyScore = clamp((checkpointConsistency * 0.35) + (repConsistency * 0.65), 0, 100);
+
+    let penalty = 0;
+    const penaltyBreakdown = {
+        spine: 0,
+        bar_path: 0,
+        hip_hinge: 0,
+        eccentric: 0,
+        low_confidence: 0,
+    };
+
+    if (spineScore < 65) {
+        penalty += 12;
+        penaltyBreakdown.spine = 12;
+    }
+    if (barPathScore < 70) {
+        penalty += 8;
+        penaltyBreakdown.bar_path = 8;
+    }
+    if (hipHingeScore < 65) {
+        penalty += 8;
+        penaltyBreakdown.hip_hinge = 8;
+    }
+    if (eccentricScore < 65) {
+        penalty += 6;
+        penaltyBreakdown.eccentric = 6;
+    }
+    if (quality.confidence_label === "low") {
+        penalty += 6;
+        penaltyBreakdown.low_confidence = 6;
+    }
+
+    const weighted = (0.35 * embeddingScore) + (0.45 * checkpointAverage) + (0.2 * consistencyScore);
+    const finalScore = clamp(weighted - penalty, 0, 100);
+
+    return {
+        embeddingScore,
+        checkpointAverage,
+        consistencyScore,
+        repConsistency,
+        penalty,
+        penaltyBreakdown,
+        finalScore,
+    };
+}
+
+async function runBiomechanicsAnalysis(videoPart: { inlineData: { mimeType: string; data: string } }, exercise: string): Promise<BiomechanicsAnalysis> {
+    const exerciseConfig = EXERCISES[exercise];
+    const prompt = exerciseConfig?.prompt ?? GENERIC_EXERCISE_PROMPT;
+    const modelCandidates = [ANALYSIS_MODEL_PRIMARY, ANALYSIS_MODEL_FALLBACK];
+
+    let lastError: unknown = null;
+
+    for (const model of modelCandidates) {
+        try {
+            const response = await ai.models.generateContent({
+                model,
+                contents: [
+                    createPartFromText(prompt),
+                    videoPart,
+                ],
+                config: {
+                    temperature: 0.1,
+                    responseMimeType: "application/json",
+                },
+            });
+
+            const parsed = safeParseJson(response.text ?? "");
+            return toBiomechanicsAnalysis(parsed);
+        } catch (error) {
+            lastError = error;
+    }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Biomechanics analysis failed");
+}
+
+async function runQualityAndRepAnalysis(videoPart: { inlineData: { mimeType: string; data: string } }, exercise: string): Promise<QualityAndRepAnalysis> {
+    const qualityPrompt = `You are a strict strength coach evaluating deadlift recording quality and rep-by-rep execution quality.
+
+Exercise: ${exercise}
+
+Task:
+1) Assess camera/view quality for reliable form grading.
+2) Detect reps and score each rep 0-100.
+3) Summarize consistency across reps.
+
+Return ONLY valid JSON with this exact structure:
+{
+  "confidence_score": 0,
+  "confidence_label": "low",
+  "camera_angle_quality": 0,
+  "body_visibility_quality": 0,
+  "warnings": [""],
+  "retake_guidance": "",
+  "rep_scores": [
+    { "rep_index": 1, "score": 0, "notes": "" }
+  ],
+  "detected_rep_count": 0,
+  "consistency_summary": ""
+}
+
+Rules:
+- confidence_label must be one of: low, medium, high.
+- If lifter or bar is not fully visible for key phases, confidence_label must be low.
+- rep_scores should include every clearly visible rep. Keep rep_index sequential.
+- Notes must mention concrete mechanics, not generic encouragement.`;
+
+    const modelCandidates = [ANALYSIS_MODEL_PRIMARY, ANALYSIS_MODEL_FALLBACK];
+    let lastError: unknown = null;
+
+    for (const model of modelCandidates) {
+        try {
+            const response = await ai.models.generateContent({
+                model,
+                contents: [
+                    createPartFromText(qualityPrompt),
+                    videoPart,
+                ],
+                config: {
+                    temperature: 0.1,
+                    responseMimeType: "application/json",
+                },
+            });
+
+            const parsed = safeParseJson(response.text ?? "");
+            return toQualityAndRepAnalysis(parsed);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Quality and rep analysis failed");
+}
+
+export async function POST(req: NextRequest) {
+    try {
+        const formData = await req.formData();
+        const videoFile = formData.get("video") as File;
+        const exercise = normalizeExerciseKey(formData.get("exercise") as string | null, "deadlift");
+        const requestedReference = normalizeExerciseKey(formData.get("pro_reference_id") as string | null, exercise);
+
+        if (!videoFile) {
+            return NextResponse.json({ error: "Missing video file" }, { status: 400 });
+        }
+
+        // --- Validation: File size ---
+        if (videoFile.size > MAX_FILE_SIZE_BYTES) {
+            return NextResponse.json(
+                { error: `Video must be under ${MAX_FILE_SIZE_BYTES / 1024 / 1024}MB. Received: ${(videoFile.size / 1024 / 1024).toFixed(1)}MB` },
+                { status: 413 }
+            );
+        }
+
+        // --- Validation: Duration (checked via metadata header if available) ---
+        const durationHeader = formData.get("duration") as string | null;
+        if (durationHeader) {
+            const durationSeconds = parseFloat(durationHeader);
+            if (durationSeconds > MAX_VIDEO_DURATION_SECONDS) {
+                return NextResponse.json(
+                    { error: `Clips must be ${MAX_VIDEO_DURATION_SECONDS} seconds or under. Your clip: ${durationSeconds.toFixed(1)}s` },
+                    { status: 400 }
+                );
+            }
+        }
+
+        const arrayBuffer = await videoFile.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const mimeType = videoFile.type || "video/mp4";
+        const videoPart = {
+            inlineData: {
+                mimeType,
+                data: buffer.toString("base64"),
+            },
+        };
+
+        try {
+            const response = await ai.models.embedContent({
+                model: EMBEDDING_MODEL,
+                contents: [videoPart],
+                config: {
+                    outputDimensionality: EMBEDDING_DIMENSIONS
+                }
+            });
+
+            const userEmbedding = response.embeddings?.[0]?.values;
+
+            if (!userEmbedding) {
+                throw new Error("Failed to generate video embedding from Gemini Embedding 2");
+            }
+
+            // Retrieve stored reference vector
+            const { vector: proEmbedding, source: referenceSource } = loadReferenceEmbedding(requestedReference);
+
+            if (proEmbedding.length !== userEmbedding.length) {
+                throw new Error(`Reference embedding dimension mismatch. Expected ${userEmbedding.length}, got ${proEmbedding.length}.`);
+            }
+
+            // Calculate 'Form Match Score' via cosine similarity
+            const similarity = computeCosineSimilarity(userEmbedding, proEmbedding);
+            const analysis = await runBiomechanicsAnalysis(videoPart, exercise);
+            const quality = await runQualityAndRepAnalysis(videoPart, exercise);
+            const score = computeScoring(similarity, analysis, quality);
+
+            const critique = {
+                power: analysis.positive,
+                grace: quality.confidence_label === "low"
+                    ? `${analysis.top_priority} Capture quality is low confidence: ${quality.retake_guidance}`
+                    : analysis.top_priority,
+                consistency: `Rep consistency ${score.repConsistency.toFixed(0)}/100 across ${quality.detected_rep_count} detected reps. Penalty applied: ${score.penalty}.`,
+            };
+
+            return NextResponse.json({
+                exercise,
+                pro_reference_id: referenceSource,
+                similarity_score: Number((score.embeddingScore / 100).toFixed(4)),
+                similarity_cosine: Number(similarity.toFixed(4)),
+                embedding_score: Number(score.embeddingScore.toFixed(1)),
+                checkpoint_average: Number(score.checkpointAverage.toFixed(1)),
+                consistency_score: Number(score.consistencyScore.toFixed(1)),
+                rep_consistency_score: Number(score.repConsistency.toFixed(1)),
+                penalty_score: score.penalty,
+                penalty_breakdown: score.penaltyBreakdown,
+                final_score: Number(score.finalScore.toFixed(1)),
+                checkpoints: analysis.checkpoints,
+                quality_gate: {
+                    confidence_score: Number(quality.confidence_score.toFixed(1)),
+                    confidence_label: quality.confidence_label,
+                    camera_angle_quality: Number(quality.camera_angle_quality.toFixed(1)),
+                    body_visibility_quality: Number(quality.body_visibility_quality.toFixed(1)),
+                    warnings: quality.warnings,
+                    retake_guidance: quality.retake_guidance,
+                },
+                rep_analysis: {
+                    rep_scores: quality.rep_scores,
+                    detected_rep_count: quality.detected_rep_count,
+                    consistency_summary: quality.consistency_summary,
+                },
+                overall_score: Number(analysis.overall_score.toFixed(1)),
+                top_priority: analysis.top_priority,
+                positive: analysis.positive,
+                injury_risk: analysis.injury_risk,
+                embedding_model: EMBEDDING_MODEL,
+                embedding_dimensions: userEmbedding.length,
+                analysis_model: ANALYSIS_MODEL_PRIMARY,
+                max_clip_duration: MAX_VIDEO_DURATION_SECONDS,
+                critique
+            });
+        } catch (error: unknown) {
+            throw error;
+        }
+
+    } catch (error: unknown) {
+        console.error("Error processing workout:", error);
+        const message = error instanceof Error ? error.message : "Internal server error";
+        return NextResponse.json({ error: message }, { status: 500 });
+    }
+}
