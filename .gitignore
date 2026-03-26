@@ -42,3 +42,9 @@ next-env.d.ts
 
 # Local Netlify folder
 .netlify
+
+# Google Cloud service account credentials (never commit these)
+involuted-river-490405-h6-ce541aa2ddec.json
+*-service-account.json
+*-credentials.json
+

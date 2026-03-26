@@ -1,0 +1,14 @@
+{
+  "deadlift": {
+    "good": [],
+    "bad": []
+  },
+  "squat": {
+    "good": [],
+    "bad": []
+  },
+  "bench_press": {
+    "good": [],
+    "bad": []
+  }
+}

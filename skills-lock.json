@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "app-store-optimization": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "computedHash": "97e4f104bd4861b4c3b4eab494c3ec782f49d144b9e78b4f2de3c8c92d688eea"
+    },
+    "app-store-screenshots": {
+      "source": "inferen-sh/skills",
+      "sourceType": "github",
+      "computedHash": "9927b6a5aa318f486cf3165653408fde670b4b0148a1c0192aa6381cd1f44896"
+    },
+    "apple-appstore-reviewer": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "848a1946f838e1b36f4af8b65caeea9e5bfa486d6059325520bb6124c05b0526"
+    }
+  }
+}

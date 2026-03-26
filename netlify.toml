@@ -1,2 +1,17 @@
 [build]
   command = "npm run build"
+
+# Daily Gemini File API refresh — re-uploads all GCS reference clips to get fresh 48h URIs.
+# Requires REREGISTER_SECRET, GCS_BUCKET, GEMINI_API_KEY, and GOOGLE_APPLICATION_CREDENTIALS
+# to be set in Netlify environment variables.
+#
+# NOTE: Netlify Scheduled Functions require a Pro plan.
+# If you are on the free plan, use cron-job.org instead:
+#   URL:     https://<your-site>.netlify.app/api/reregister
+#   Method:  POST
+#   Headers: Authorization: Bearer <REREGISTER_SECRET>
+#   Time:    Daily at 03:00 UTC
+#
+# Uncomment the block below to use Netlify Scheduled Functions (Pro):
+# [functions]
+#   directory = "netlify/functions"

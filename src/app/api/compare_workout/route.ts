@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, createPartFromText } from "@google/genai";
+import { Storage } from "@google-cloud/storage";
 import fs from "node:fs";
 import path from "node:path";
-import { EXERCISES, GENERIC_EXERCISE_PROMPT } from "@/lib/prompts";
+import { EXERCISES, getAnalysisPrompt, GENERIC_EXERCISE_PROMPT } from "@/lib/prompts";
 
 // Initialize Gemini SDK
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -15,11 +16,84 @@ const EMBEDDING_DIMENSIONS = 3072; // MRL — Matryoshka Representation Learning
 const ANALYSIS_MODEL_PRIMARY = "gemini-2.5-pro";
 const ANALYSIS_MODEL_FALLBACK = "gemini-2.5-flash";
 const REFERENCES_PATH = path.join(process.cwd(), "data", "references.json");
+const VIDEO_REFERENCES_PATH = path.join(process.cwd(), "data", "video_references.json");
+
+// --- Video Reference types ---
+type VideoRefEntry = {
+    id: string;
+    gcs_uri: string;
+    gemini_file_uri: string;
+    label: string;
+    quality: "good" | "bad";
+    exercise: string;
+    mime_type: string;
+};
+
+type VideoRefRegistry = Record<string, { good: VideoRefEntry[]; bad: VideoRefEntry[] }>;
+
+// --- Registry cache (module-level, refreshed every hour per Lambda instance) ---
+let _registryCache: { data: VideoRefRegistry; expiresAt: number } | null = null;
+const REGISTRY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const GCS_REGISTRY_FILE = "registry.json";
+
+/** Load the full registry. Prefers gs://<GCS_BUCKET>/registry.json (kept fresh by the
+ *  daily /api/reregister cron), falls back to the local data/video_references.json. */
+async function loadFullRegistry(): Promise<VideoRefRegistry> {
+    const now = Date.now();
+
+    // Return cached copy if still valid
+    if (_registryCache && now < _registryCache.expiresAt) {
+        return _registryCache.data;
+    }
+
+    const bucketName = process.env.GCS_BUCKET;
+    if (bucketName) {
+        try {
+            const storage = new Storage();
+            const [contents] = await storage.bucket(bucketName).file(GCS_REGISTRY_FILE).download();
+            const registry: VideoRefRegistry = JSON.parse(contents.toString("utf-8"));
+            _registryCache = { data: registry, expiresAt: now + REGISTRY_CACHE_TTL_MS };
+            return registry;
+        } catch {
+            // GCS unavailable — fall through to local file
+        }
+    }
+
+    // Fall back: local file baked in at deploy time (good for dev / first deploy)
+    try {
+        if (fs.existsSync(VIDEO_REFERENCES_PATH)) {
+            const registry: VideoRefRegistry = JSON.parse(fs.readFileSync(VIDEO_REFERENCES_PATH, "utf-8"));
+            _registryCache = { data: registry, expiresAt: now + REGISTRY_CACHE_TTL_MS };
+            return registry;
+        }
+    } catch {
+        // ignore
+    }
+
+    return {};
+}
+
+/** Load video references for a given exercise. Returns { good, bad } arrays (may be empty). */
+async function loadVideoReferences(exercise: string): Promise<{ good: VideoRefEntry[]; bad: VideoRefEntry[] }> {
+    try {
+        const registry = await loadFullRegistry();
+        return registry[exercise] ?? { good: [], bad: [] };
+    } catch {
+        return { good: [], bad: [] };
+    }
+}
+
+/** Pick one random entry from an array, or undefined if empty */
+function pickRandom<T>(arr: T[]): T | undefined {
+    if (arr.length === 0) return undefined;
+    return arr[Math.floor(Math.random() * arr.length)];
+}
 
 type CheckpointEvaluation = {
     name: string;
     score: number;
     feedback: string;
+    observed_details?: string;
 };
 
 type BiomechanicsAnalysis = {
@@ -28,6 +102,8 @@ type BiomechanicsAnalysis = {
     top_priority: string;
     positive: string;
     injury_risk: "low" | "medium" | "high";
+    bad_form_detected: boolean;
+    bad_form_flags: string[];
 };
 
 type RepEvaluation = {
@@ -111,10 +187,12 @@ function toBiomechanicsAnalysis(input: unknown): BiomechanicsAnalysis {
             const name = String(parsed.name ?? "Checkpoint").trim();
             const scoreRaw = Number(parsed.score ?? 0);
             const feedback = String(parsed.feedback ?? "").trim();
+            const observed_details = parsed.observed_details ? String(parsed.observed_details).trim() : undefined;
             return {
                 name,
                 score: clamp(Number.isFinite(scoreRaw) ? scoreRaw : 0, 0, 100),
                 feedback,
+                ...(observed_details ? { observed_details } : {}),
             } satisfies CheckpointEvaluation;
         })
         .filter((item): item is CheckpointEvaluation => Boolean(item));
@@ -133,6 +211,8 @@ function toBiomechanicsAnalysis(input: unknown): BiomechanicsAnalysis {
         top_priority: String(obj.top_priority ?? "Focus on maintaining a neutral spine and steady bar path.").trim(),
         positive: String(obj.positive ?? "Strong effort and intent visible across the set.").trim(),
         injury_risk: injuryRisk,
+        bad_form_detected: Boolean(obj.bad_form_detected),
+        bad_form_flags: toStringArray(obj.bad_form_flags),
     };
 }
 
@@ -208,7 +288,11 @@ function computeRepConsistency(repScores: RepEvaluation[]): number {
 }
 
 function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis, quality: QualityAndRepAnalysis) {
+    // Embedding is used ONLY for exercise classification, not scoring.
+    // Cosine similarity measures "is this the same type of exercise?" not "is the form good?"
     const embeddingScore = clamp(((similarityCosine + 1) / 2) * 100, 0, 100);
+    const exerciseMismatch = similarityCosine < 0.3;
+
     const checkpointAverage = analysis.checkpoints.reduce((acc, cp) => acc + cp.score, 0) / analysis.checkpoints.length;
 
     const spineScore = getCheckpointScore(analysis.checkpoints, "spine");
@@ -220,6 +304,12 @@ function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis
     const repConsistency = computeRepConsistency(quality.rep_scores);
     const consistencyScore = clamp((checkpointConsistency * 0.35) + (repConsistency * 0.65), 0, 100);
 
+    // Quality adjustment: reward high-confidence recordings, penalize low-confidence
+    const qualityAdjustment = clamp(
+        (quality.confidence_score * 0.4) + (quality.camera_angle_quality * 0.3) + (quality.body_visibility_quality * 0.3),
+        0, 100
+    );
+
     let penalty = 0;
     const penaltyBreakdown = {
         spine: 0,
@@ -227,6 +317,7 @@ function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis
         hip_hinge: 0,
         eccentric: 0,
         low_confidence: 0,
+        bad_form: 0,
     };
 
     if (spineScore < 65) {
@@ -249,14 +340,21 @@ function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis
         penalty += 6;
         penaltyBreakdown.low_confidence = 6;
     }
+    if (analysis.bad_form_detected) {
+        penalty += 10;
+        penaltyBreakdown.bad_form = 10;
+    }
 
-    const weighted = (0.35 * embeddingScore) + (0.45 * checkpointAverage) + (0.2 * consistencyScore);
+    // New formula: embedding removed from score, replaced with quality adjustment
+    const weighted = (0.60 * checkpointAverage) + (0.25 * consistencyScore) + (0.15 * qualityAdjustment);
     const finalScore = clamp(weighted - penalty, 0, 100);
 
     return {
         embeddingScore,
+        exerciseMismatch,
         checkpointAverage,
         consistencyScore,
+        qualityAdjustment,
         repConsistency,
         penalty,
         penaltyBreakdown,
@@ -265,9 +363,38 @@ function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis
 }
 
 async function runBiomechanicsAnalysis(videoPart: { inlineData: { mimeType: string; data: string } }, exercise: string): Promise<BiomechanicsAnalysis> {
-    const exerciseConfig = EXERCISES[exercise];
-    const prompt = exerciseConfig?.prompt ?? GENERIC_EXERCISE_PROMPT;
+    const prompt = getAnalysisPrompt(exercise);
     const modelCandidates = [ANALYSIS_MODEL_PRIMARY, ANALYSIS_MODEL_FALLBACK];
+
+    // Load reference video clips for few-shot comparison
+    const refs = await loadVideoReferences(exercise);
+    const goodRef = pickRandom(refs.good);
+    const badRef = pickRandom(refs.bad);
+
+    // Build content parts: prompt → [good ref] → [bad ref] → user video
+    const contentParts: Array<Record<string, unknown>> = [];
+
+    // Few-shot preamble if we have references
+    if (goodRef || badRef) {
+        let refPrompt = "REFERENCE CLIPS FOR COMPARISON:\n";
+        if (goodRef) refPrompt += `- The first video is GOOD FORM (${goodRef.label}). Study it as the gold standard.\n`;
+        if (badRef) refPrompt += `- The ${goodRef ? "second" : "first"} video is BAD FORM (${badRef.label}). Note the dangerous patterns.\n`;
+        refPrompt += `- The ${goodRef && badRef ? "third" : goodRef || badRef ? "second" : "first"} video is the USER'S CLIP to evaluate.\n`;
+        refPrompt += "Compare the user's form against both reference clips.\n\n";
+        contentParts.push(createPartFromText(refPrompt));
+    }
+
+    // Add reference video parts (from Gemini File API URIs)
+    if (goodRef?.gemini_file_uri) {
+        contentParts.push({ fileData: { fileUri: goodRef.gemini_file_uri, mimeType: goodRef.mime_type } });
+    }
+    if (badRef?.gemini_file_uri) {
+        contentParts.push({ fileData: { fileUri: badRef.gemini_file_uri, mimeType: badRef.mime_type } });
+    }
+
+    // Main analysis prompt + user video
+    contentParts.push(createPartFromText(prompt));
+    contentParts.push(videoPart);
 
     let lastError: unknown = null;
 
@@ -275,10 +402,7 @@ async function runBiomechanicsAnalysis(videoPart: { inlineData: { mimeType: stri
         try {
             const response = await ai.models.generateContent({
                 model,
-                contents: [
-                    createPartFromText(prompt),
-                    videoPart,
-                ],
+                contents: contentParts,
                 config: {
                     temperature: 0.1,
                     responseMimeType: "application/json",
@@ -296,14 +420,16 @@ async function runBiomechanicsAnalysis(videoPart: { inlineData: { mimeType: stri
 }
 
 async function runQualityAndRepAnalysis(videoPart: { inlineData: { mimeType: string; data: string } }, exercise: string): Promise<QualityAndRepAnalysis> {
-    const qualityPrompt = `You are a strict strength coach evaluating deadlift recording quality and rep-by-rep execution quality.
+    const exerciseConfig = EXERCISES[exercise];
+    const exerciseName = exerciseConfig?.name ?? exercise;
+    const qualityPrompt = `You are a strict strength coach evaluating recording quality and rep-by-rep execution quality for a ${exerciseName} video.
 
-Exercise: ${exercise}
+Exercise: ${exerciseName}
 
 Task:
-1) Assess camera/view quality for reliable form grading.
-2) Detect reps and score each rep 0-100.
-3) Summarize consistency across reps.
+1) Assess camera/view quality for reliable form grading. Consider: angle (side view is ideal for most lifts), lighting, full body visibility, bar/equipment visibility, steadiness.
+2) Detect individual reps and score each rep 0-100 based on form quality.
+3) Summarize consistency across reps — flag any progressive form breakdown.
 
 Return ONLY valid JSON with this exact structure:
 {
@@ -322,9 +448,11 @@ Return ONLY valid JSON with this exact structure:
 
 Rules:
 - confidence_label must be one of: low, medium, high.
-- If lifter or bar is not fully visible for key phases, confidence_label must be low.
+- If lifter or equipment is not fully visible for key phases, confidence_label must be low.
+- camera_angle_quality: 90+ for clear side view, 70-89 for angled view, below 70 for front-on or obstructed.
 - rep_scores should include every clearly visible rep. Keep rep_index sequential.
-- Notes must mention concrete mechanics, not generic encouragement.`;
+- Notes must mention concrete mechanics (joint positions, bar path, tempo), not generic encouragement.
+- If form degrades across reps, note this in consistency_summary.`;
 
     const modelCandidates = [ANALYSIS_MODEL_PRIMARY, ANALYSIS_MODEL_FALLBACK];
     let lastError: unknown = null;
@@ -422,6 +550,14 @@ export async function POST(req: NextRequest) {
             const quality = await runQualityAndRepAnalysis(videoPart, exercise);
             const score = computeScoring(similarity, analysis, quality);
 
+            // Check which reference clips were used for few-shot
+            const refs = await loadVideoReferences(exercise);
+            const refClipsUsed = {
+                good_available: refs.good.length,
+                bad_available: refs.bad.length,
+                few_shot_enabled: refs.good.length > 0 || refs.bad.length > 0,
+            };
+
             const critique = {
                 power: analysis.positive,
                 grace: quality.confidence_label === "low"
@@ -430,25 +566,35 @@ export async function POST(req: NextRequest) {
                 consistency: `Rep consistency ${score.repConsistency.toFixed(0)}/100 across ${quality.detected_rep_count} detected reps. Penalty applied: ${score.penalty}.`,
             };
 
+            // Exercise mismatch warning
+            const exerciseWarnings: string[] = [];
+            if (score.exerciseMismatch) {
+                exerciseWarnings.push(`This video doesn't appear to match the selected exercise (${exercise}). The embedding similarity is very low. Please ensure you recorded the correct exercise.`);
+            }
+
             return NextResponse.json({
                 exercise,
                 pro_reference_id: referenceSource,
                 similarity_score: Number((score.embeddingScore / 100).toFixed(4)),
                 similarity_cosine: Number(similarity.toFixed(4)),
                 embedding_score: Number(score.embeddingScore.toFixed(1)),
+                exercise_mismatch: score.exerciseMismatch,
                 checkpoint_average: Number(score.checkpointAverage.toFixed(1)),
                 consistency_score: Number(score.consistencyScore.toFixed(1)),
+                quality_adjustment: Number(score.qualityAdjustment.toFixed(1)),
                 rep_consistency_score: Number(score.repConsistency.toFixed(1)),
                 penalty_score: score.penalty,
                 penalty_breakdown: score.penaltyBreakdown,
                 final_score: Number(score.finalScore.toFixed(1)),
                 checkpoints: analysis.checkpoints,
+                bad_form_detected: analysis.bad_form_detected,
+                bad_form_flags: analysis.bad_form_flags,
                 quality_gate: {
                     confidence_score: Number(quality.confidence_score.toFixed(1)),
                     confidence_label: quality.confidence_label,
                     camera_angle_quality: Number(quality.camera_angle_quality.toFixed(1)),
                     body_visibility_quality: Number(quality.body_visibility_quality.toFixed(1)),
-                    warnings: quality.warnings,
+                    warnings: [...quality.warnings, ...exerciseWarnings],
                     retake_guidance: quality.retake_guidance,
                 },
                 rep_analysis: {
@@ -464,6 +610,7 @@ export async function POST(req: NextRequest) {
                 embedding_dimensions: userEmbedding.length,
                 analysis_model: ANALYSIS_MODEL_PRIMARY,
                 max_clip_duration: MAX_VIDEO_DURATION_SECONDS,
+                reference_clips: refClipsUsed,
                 critique
             });
         } catch (error: unknown) {

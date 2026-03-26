@@ -33,6 +33,15 @@ export default function MobileApp() {
  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
  const recordingStartRef = useRef<number>(0);
  const MAX_RECORDING_SECONDS = 60;
+ const [selectedExercise, setSelectedExercise] = useState<'deadlift' | 'squat' | 'bench_press' | 'generic'>('deadlift');
+ const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+ const EXERCISE_OPTIONS = [
+  { key: 'deadlift' as const, label: 'Deadlift', emoji: '🏋️' },
+  { key: 'squat' as const, label: 'Squat', emoji: '🦵' },
+  { key: 'bench_press' as const, label: 'Bench Press', emoji: '💪' },
+  { key: 'generic' as const, label: 'Other', emoji: '🔄' },
+ ];
 
  // --- Handlers ---
 
@@ -41,8 +50,11 @@ export default function MobileApp() {
  setRecordingTime(0);
  recordingStartRef.current = Date.now();
  if (webcamRef.current && webcamRef.current.stream) {
+ const vp9 = "video/webm;codecs=vp9";
+ const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(vp9) ? vp9 : "video/webm";
  mediaRecorderRef.current = new MediaRecorder(webcamRef.current.stream, {
- mimeType: "video/webm"
+ mimeType,
+ videoBitsPerSecond: 5_000_000,
  });
  const chunks: Blob[] = [];
  mediaRecorderRef.current.ondataavailable = (e) => {
@@ -97,9 +109,11 @@ export default function MobileApp() {
  setTimeout(() => setProcessingStep(3), 4000);
  
  try {
+ setAnalysisError(null);
  const formData = new FormData();
  formData.append('video', blob, 'workout.webm');
- formData.append('pro_reference_id', 'default_pro');
+ formData.append('exercise', selectedExercise);
+ formData.append('pro_reference_id', selectedExercise);
  if (duration) formData.append('duration', String(duration.toFixed(1)));
  
  const response = await fetch('/api/compare_workout', {
@@ -115,14 +129,8 @@ export default function MobileApp() {
  
  } catch (e) {
  console.error(e);
- setResult({
- similarity_score: 0.85,
- critique: {
- power: "Good explosive drive.",
- grace: "Smooth transitions.",
- consistency: "Solid rhythm throughout the set."
- }
- });
+ setAnalysisError(e instanceof Error ? e.message : 'Analysis failed. Please try again.');
+ setResult(null);
  setTimeout(() => setView('RESULT'), 1000);
  }
  };
@@ -556,9 +564,14 @@ export default function MobileApp() {
  >
  <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
  <Webcam 
- audio={true} 
+ audio={false} 
  ref={webcamRef} 
- videoConstraints={{ facingMode: 'environment' }}
+ videoConstraints={{
+  facingMode: 'environment',
+  width: { min: 1280, ideal: 1920 },
+  height: { min: 720, ideal: 1080 },
+  frameRate: { ideal: 30, max: 30 },
+ }}
  className="w-full h-full object-cover" 
  />
  
@@ -582,7 +595,7 @@ export default function MobileApp() {
  </div>
  </div>
 
- <header className="relative z-30 w-full pt-14 pb-4 px-6 flex items-center justify-between text-white bg-gradient-to-b from-black/60 to-transparent">
+ <header className="relative z-30 w-full pt-14 pb-2 px-6 flex items-center justify-between text-white bg-gradient-to-b from-black/60 to-transparent">
  <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center cursor-pointer"
  onClick={() => setView('HOME')}
  >
@@ -603,6 +616,26 @@ export default function MobileApp() {
  <Zap className="w-5 h-5 text-white" fill="white" />
  </div>
  </header>
+
+ {/* Exercise Selector */}
+ {!isRecording && (
+ <div className="relative z-30 flex justify-center gap-2 px-4 pb-2">
+ {EXERCISE_OPTIONS.map((opt) => (
+ <button
+ key={opt.key}
+ onClick={() => setSelectedExercise(opt.key)}
+ className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
+ selectedExercise === opt.key
+ ? 'bg-white text-zinc-900 shadow-md'
+ : 'bg-white/20 text-white/80 backdrop-blur-sm'
+ }`}
+ >
+ <span>{opt.emoji}</span>
+ <span>{opt.label}</span>
+ </button>
+ ))}
+ </div>
+ )}
 
  <div className="mt-auto mb-10 relative z-30 px-10 flex items-center justify-between w-full">
  <div className="w-12 h-12 flex items-center justify-center">
@@ -723,15 +756,56 @@ export default function MobileApp() {
  </motion.div>
  );
 
- const renderResult = () => (
- <motion.div 
+ const renderResult = () => {
+ // Error state
+ if (analysisError && !result) {
+ return (
+ <motion.div
+ key="result"
+ initial={{ y: "100%" }}
+ animate={{ y: 0 }}
+ className="absolute inset-0 z-50 bg-[#fafafa] flex flex-col items-center justify-center pt-14 pb-8 px-6 text-zinc-900"
+ >
+ <div className="bg-red-50 border border-red-200 rounded-3xl p-8 text-center max-w-sm">
+ <div className="text-4xl mb-4">⚠️</div>
+ <h2 className="font-bold text-xl text-red-700 mb-2">Analysis Failed</h2>
+ <p className="text-red-600 text-sm mb-6">{analysisError}</p>
+ <button
+ className="w-full py-3 rounded-2xl bg-zinc-900 text-white font-bold active:scale-95 transition-transform"
+ onClick={() => { setAnalysisError(null); setView('CAMERA'); }}
+ >
+ Try Again
+ </button>
+ </div>
+ </motion.div>
+ );
+ }
+
+ const finalScore = result?.final_score ?? 0;
+ const sc = scoreColor(finalScore);
+ const checkpoints: Array<{ name: string; score: number; feedback: string; observed_details?: string }> = result?.checkpoints ?? [];
+ const badFormFlags: string[] = result?.bad_form_flags ?? [];
+ const injuryRisk: string = result?.injury_risk ?? 'unknown';
+ const qualityGate = result?.quality_gate;
+ const repAnalysis = result?.rep_analysis;
+ const exerciseMismatch: boolean = result?.exercise_mismatch ?? false;
+
+ const injuryBadge = (risk: string) => {
+ if (risk === 'low') return { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', label: 'Low Risk' };
+ if (risk === 'moderate') return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', label: 'Moderate Risk' };
+ return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', label: 'High Risk' };
+ };
+ const ib = injuryBadge(injuryRisk);
+
+ return (
+ <motion.div
  key="result"
  initial={{ y: "100%" }}
  animate={{ y: 0 }}
  className="absolute inset-0 z-50 bg-[#fafafa] flex flex-col pt-14 pb-8 px-6 text-zinc-900 overflow-y-auto"
  >
  <header className="flex items-center justify-between mb-6">
- <h1 className="font-black text-2xl tracking-tight">AuraScore</h1>
+ <h1 className="font-black text-2xl tracking-tight">Form Analysis</h1>
  <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center cursor-pointer"
  onClick={() => setView('HOME')}
  >
@@ -739,59 +813,193 @@ export default function MobileApp() {
  </div>
  </header>
 
+ {/* Exercise Mismatch Warning */}
+ {exerciseMismatch && (
+ <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
+ <span className="text-xl">⚠️</span>
+ <p className="text-amber-700 text-sm font-medium">This video may not match the selected exercise. Please check you recorded the right movement.</p>
+ </div>
+ )}
+
+ {/* Main Score Card */}
  {result && (
- <div className="flex flex-col items-center mb-8 bg-white p-6 rounded-[2rem] shadow-[0_10px_40px_rgba(0,0,0,0.05)] border border-black/5">
- <span className="text-5xl font-black text-zinc-800 drop-shadow-sm mb-2">
- {(result.similarity_score * 100).toFixed(1)}<span className="text-2xl text-zinc-400">%</span>
+ <div className={`flex flex-col items-center mb-5 bg-white p-6 rounded-[2rem] shadow-[0_10px_40px_rgba(0,0,0,0.05)] border border-black/5`}>
+ <div className="relative mb-3">
+ <Ring score={finalScore} size={100} stroke={8} />
+ <div className="absolute inset-0 flex items-center justify-center">
+ <span className="text-3xl font-black text-zinc-800">{finalScore.toFixed(0)}</span>
+ </div>
+ </div>
+ <span className="font-semibold text-zinc-400 text-xs tracking-widest uppercase mb-3">Overall Form Score</span>
+
+ {/* Injury Risk Badge */}
+ <div className={`${ib.bg} ${ib.border} border rounded-full px-4 py-1.5 mb-4`}>
+ <span className={`text-xs font-bold ${ib.text}`}>
+ <Shield className="w-3 h-3 inline mr-1" />{ib.label}
  </span>
- <span className="font-semibold text-zinc-400 text-sm tracking-widest uppercase">Form Match Score</span>
- 
- <div className="w-full mt-6 flex justify-between gap-3">
- <div className="flex-1 bg-red-50 rounded-2xl p-3 border border-red-100 flex flex-col items-center">
- <span className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">Power</span>
- <span className="font-bold text-red-600 text-lg">{(result.similarity_score * 100).toFixed(0)}</span>
  </div>
- <div className="flex-1 bg-amber-50 rounded-2xl p-3 border border-amber-100 flex flex-col items-center">
- <span className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-1">Grace</span>
- <span className="font-bold text-amber-600 text-lg">{(result.similarity_score * 98).toFixed(0)}</span>
+
+ {/* Score Breakdown Row */}
+ <div className="w-full flex justify-between gap-2">
+ <div className="flex-1 bg-zinc-50 rounded-2xl p-3 flex flex-col items-center">
+ <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Checkpoints</span>
+ <span className="font-bold text-zinc-700 text-lg">{result.checkpoint_average?.toFixed(0) ?? '—'}</span>
  </div>
- <div className="flex-1 bg-blue-50 rounded-2xl p-3 border border-blue-100 flex flex-col items-center">
- <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1">Cons</span>
- <span className="font-bold text-blue-600 text-lg">{(result.similarity_score * 102).toFixed(0)}</span>
+ <div className="flex-1 bg-zinc-50 rounded-2xl p-3 flex flex-col items-center">
+ <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Consistency</span>
+ <span className="font-bold text-zinc-700 text-lg">{result.consistency_score?.toFixed(0) ?? '—'}</span>
+ </div>
+ <div className="flex-1 bg-zinc-50 rounded-2xl p-3 flex flex-col items-center">
+ <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Quality</span>
+ <span className="font-bold text-zinc-700 text-lg">{result.quality_adjustment?.toFixed(0) ?? '—'}</span>
  </div>
  </div>
  </div>
  )}
 
- <div className="flex-1 rounded-[2rem] space-y-4">
- <h2 className="font-bold text-xl ml-2">Critique</h2>
+ {/* Bad Form Flags */}
+ {badFormFlags.length > 0 && (
+ <div className="mb-4">
+ <h2 className="font-bold text-lg ml-1 mb-2 flex items-center gap-2">
+ <span className="text-red-500">⛔</span> Form Issues Detected
+ </h2>
+ <div className="space-y-2">
+ {badFormFlags.map((flag, i) => (
+ <div key={i} className="bg-red-50 border border-red-100 rounded-2xl p-4">
+ <p className="text-red-700 text-sm font-medium">{flag}</p>
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
+
+ {/* Checkpoint Breakdown */}
+ {checkpoints.length > 0 && (
+ <div className="mb-4">
+ <h2 className="font-bold text-lg ml-1 mb-3">Checkpoint Scores</h2>
+ <div className="space-y-2">
+ {checkpoints.map((cp, i) => {
+ const cpColor = scoreColor(cp.score);
+ return (
+ <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-zinc-100">
+ <div className="flex items-center justify-between mb-1">
+ <span className="font-semibold text-zinc-800 text-sm">{cp.name}</span>
+ <span className={`font-bold text-sm ${cpColor.text}`}>{cp.score}/100</span>
+ </div>
+ <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden mb-2">
+ <motion.div
+ initial={{ width: 0 }}
+ animate={{ width: `${cp.score}%` }}
+ transition={{ duration: 0.8, delay: i * 0.1 }}
+ className="h-full rounded-full"
+ style={{ backgroundColor: cpColor.ring }}
+ />
+ </div>
+ <p className="text-zinc-500 text-xs leading-relaxed">{cp.feedback}</p>
+ {cp.observed_details && (
+ <p className="text-zinc-400 text-xs mt-1 italic">{cp.observed_details}</p>
+ )}
+ </div>
+ );
+ })}
+ </div>
+ </div>
+ )}
+
+ {/* Quality Gate */}
+ {qualityGate && (
+ <div className="mb-4">
+ <h2 className="font-bold text-lg ml-1 mb-2">Video Quality</h2>
+ <div className="bg-white rounded-2xl p-4 shadow-sm border border-zinc-100">
+ <div className="flex items-center gap-3 mb-3">
+ <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+ qualityGate.confidence_label === 'high' ? 'bg-emerald-50 text-emerald-700' :
+ qualityGate.confidence_label === 'medium' ? 'bg-amber-50 text-amber-700' :
+ 'bg-red-50 text-red-700'
+ }`}>
+ {qualityGate.confidence_label} confidence
+ </div>
+ <span className="text-zinc-400 text-xs">Score: {qualityGate.confidence_score}/100</span>
+ </div>
+ <div className="flex gap-3 mb-3">
+ <div className="flex-1">
+ <p className="text-[10px] text-zinc-400 uppercase font-bold mb-0.5">Camera Angle</p>
+ <p className="text-sm font-semibold text-zinc-700">{qualityGate.camera_angle_quality}/100</p>
+ </div>
+ <div className="flex-1">
+ <p className="text-[10px] text-zinc-400 uppercase font-bold mb-0.5">Body Visibility</p>
+ <p className="text-sm font-semibold text-zinc-700">{qualityGate.body_visibility_quality}/100</p>
+ </div>
+ </div>
+ {qualityGate.warnings?.length > 0 && (
+ <div className="space-y-1">
+ {qualityGate.warnings.map((w: string, i: number) => (
+ <p key={i} className="text-amber-600 text-xs font-medium">⚠ {w}</p>
+ ))}
+ </div>
+ )}
+ {qualityGate.retake_guidance && qualityGate.confidence_label !== 'high' && (
+ <p className="text-zinc-500 text-xs mt-2 italic">{qualityGate.retake_guidance}</p>
+ )}
+ </div>
+ </div>
+ )}
+
+ {/* Rep Analysis */}
+ {repAnalysis && repAnalysis.rep_scores?.length > 0 && (
+ <div className="mb-4">
+ <h2 className="font-bold text-lg ml-1 mb-2">Rep Breakdown</h2>
+ <div className="bg-white rounded-2xl p-4 shadow-sm border border-zinc-100">
+ <div className="flex gap-2 mb-3">
+ {repAnalysis.rep_scores.map((rep: number, i: number) => {
+ const rc = scoreColor(rep);
+ return (
+ <div key={i} className={`flex-1 ${rc.bg} rounded-xl p-2 flex flex-col items-center border ${rc.border}`}>
+ <span className="text-[10px] text-zinc-400 font-bold">Rep {i + 1}</span>
+ <span className={`font-bold text-sm ${rc.text}`}>{rep}</span>
+ </div>
+ );
+ })}
+ </div>
+ {repAnalysis.consistency_summary && (
+ <p className="text-zinc-500 text-xs">{repAnalysis.consistency_summary}</p>
+ )}
+ </div>
+ </div>
+ )}
+
+ {/* Critique (positive + top priority) */}
  {result?.critique && (
+ <div className="mb-4">
+ <h2 className="font-bold text-lg ml-1 mb-2">Summary</h2>
  <div className="space-y-3">
- <div className="bg-white p-5 rounded-3xl shadow-sm border border-zinc-100">
- <span className="text-red-500 font-bold block mb-1">Power</span>
- <p className="text-zinc-600 font-medium text-sm leading-relaxed">{result.critique.power}</p>
+ <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+ <span className="text-emerald-700 font-bold text-xs uppercase tracking-wide block mb-1">What You Did Well</span>
+ <p className="text-emerald-800 text-sm font-medium leading-relaxed">{result.critique.power}</p>
  </div>
- <div className="bg-white p-5 rounded-3xl shadow-sm border border-zinc-100">
- <span className="text-amber-500 font-bold block mb-1">Grace</span>
- <p className="text-zinc-600 font-medium text-sm leading-relaxed">{result.critique.grace}</p>
+ <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+ <span className="text-amber-700 font-bold text-xs uppercase tracking-wide block mb-1">Top Priority Fix</span>
+ <p className="text-amber-800 text-sm font-medium leading-relaxed">{result.critique.grace}</p>
  </div>
- <div className="bg-white p-5 rounded-3xl shadow-sm border border-zinc-100">
- <span className="text-blue-500 font-bold block mb-1">Consistency</span>
- <p className="text-zinc-600 font-medium text-sm leading-relaxed">{result.critique.consistency}</p>
  </div>
  </div>
  )}
- </div>
 
- <button 
- className="w-full mt-6 py-4 rounded-2xl bg-black text-white font-bold text-lg active:scale-95 transition-transform"
+ <button
+ className="w-full mt-2 py-4 rounded-2xl bg-black text-white font-bold text-lg active:scale-95 transition-transform"
+ onClick={() => setView('CAMERA')}
+ >
+ Record Again
+ </button>
+ <button
+ className="w-full mt-2 py-3 rounded-2xl bg-zinc-100 text-zinc-600 font-bold text-sm active:scale-95 transition-transform"
  onClick={() => setView('HOME')}
  >
- Done
+ Back to Home
  </button>
-
  </motion.div>
  );
+ };
 
  return (
  <main className="relative w-full h-[100dvh] overflow-hidden bg-[#fafafa] font-sans antialiased text-black">
