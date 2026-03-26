@@ -36,7 +36,7 @@ export function Footer() {
 
         <div className="w-full flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-3">
-            <img src="/logo/Formax%20logo.png" alt="Form Max Logo" className="h-12 md:h-14 w-auto object-contain dark:invert" />
+            <img src="/logo/Formax%20logo%20horizontal.png" alt="Form Max Logo" className="h-8 md:h-10 w-auto object-contain dark:invert" />
             <span className="font-semibold text-sm tracking-tight text-zinc-600 dark:text-zinc-500">&copy; 2026</span>
           </div>
 

@@ -37,7 +37,7 @@ function Nav() {
   return (
     <nav className="w-full flex flex-col md:flex-row items-center justify-between pt-2 pb-4 md:pt-4 md:pb-4 gap-4 md:gap-0 border-b border-transparent">
       <div className="flex items-center justify-center md:justify-start w-full md:w-auto">
-        <img src="/logo/Formax%20logo.png" alt="Form Max Logo" className="h-16 sm:h-[84px] w-auto object-contain dark:invert origin-center md:origin-left -ml-2" />
+        <img src="/logo/Formax%20logo%20horizontal.png" alt="Form Max Logo" className="h-12 sm:h-[64px] w-auto object-contain dark:invert origin-center md:origin-left -ml-2" />
       </div>
       <div className="flex items-center justify-center md:justify-end gap-6 text-sm font-medium w-full md:w-auto">
         <a href="#features" className="hidden lg:block text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors">Features</a>

@@ -8,7 +8,7 @@ export default function OnboardingPage() {
 
   return (
     <main className="min-h-screen bg-zinc-50 dark:bg-[#0A0A0B]">
-      <Onboarding onComplete={() => router.push('/dashboard')} />
+      <Onboarding onComplete={() => router.push('/page2')} />
     </main>
   );
 }

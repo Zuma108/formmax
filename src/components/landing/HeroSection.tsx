@@ -68,15 +68,15 @@ export function HeroSection() {
         className="relative w-full aspect-square md:aspect-[4/3] lg:aspect-square flex items-center justify-center"
       >
         {/* Glow behind graph */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-blue-500/10 blur-[100px] pointer-events-none rounded-full" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-zinc-500/15 blur-[100px] pointer-events-none rounded-full" />
         
-        {/* Glassmorphic Container for the Hero Image */}
-        <div className="relative w-full max-w-md bg-white/70 dark:bg-zinc-900/50 backdrop-blur-3xl border border-zinc-200 dark:border-white/10 rounded-[2.5rem] p-4 shadow-2xl dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_20px_40px_-15px_rgba(0,0,0,0.5)] flex flex-col items-center overflow-hidden">
-          <div className="relative w-full aspect-[4/5] rounded-[2rem] overflow-hidden">
+        {/* Container for the Hero Image */}
+        <div className="relative w-full max-w-md p-4 flex flex-col items-center justify-center">
+          <div className="relative w-full aspect-[4/5] flex items-center justify-center">
             <img 
               src="/assets/hero-section-image.webp" 
               alt="Live Form Analysis" 
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
             />
           </div>
         </div>

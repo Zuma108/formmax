@@ -1,0 +1,424 @@
+"use client";
+
+import { useState, useRef, useEffect, UIEvent } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Shield, Heart, TrendingUp, Dumbbell, Brain, Zap, Volume2, CheckCircle, Crosshair, Activity } from 'lucide-react';
+
+interface OnboardingProps {
+  onComplete: () => void;
+}
+
+// --- Custom Components ---
+
+const OptionCard = ({ 
+  icon: Icon, 
+  title, 
+  selected, 
+  onClick, 
+  multi = false 
+}: { 
+  icon: any, 
+  title: string, 
+  selected: boolean, 
+  onClick: () => void,
+  multi?: boolean
+}) => {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full p-4 rounded-3xl flex items-center gap-5 transition-all outline-none duration-250 ${
+        selected 
+          ? 'bg-[#18181b] text-white shadow-md scale-[0.98]' 
+          : 'bg-[#f4f4f5] text-zinc-900 hover:bg-[#eaeaea]'
+      }`}
+    >
+      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+        selected ? 'bg-white text-zinc-900' : 'bg-white shadow-sm text-zinc-900'
+      }`}>
+        <Icon strokeWidth={2} className="w-6 h-6" />
+      </div>
+      <span className="font-semibold text-lg">{title}</span>
+    </button>
+  );
+};
+
+// --- Weight Ruler Component ---
+const WeightRuler = ({ value, onChange, unit }: { value: number, onChange: (v: number) => void, unit: string }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const tickSpacing = 10; // width of each inner tick element
+  const minVal = 40;
+  const maxVal = 150;
+  
+  const tickCount = (maxVal - minVal) * 10; // ticks every 0.1 kg
+  
+  // Calculate padding based on container width so the first/last tick can reach the center
+  const [paddingX, setPaddingX] = useState(0);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+       const w = scrollRef.current.clientWidth / 2;
+       setPaddingX(w);
+       
+       // set initial scroll position
+       const initialScrollLeft = ((value - minVal) * 10) * tickSpacing;
+       scrollRef.current.scrollLeft = initialScrollLeft;
+    }
+  }, []);
+
+  const handleScroll = (e: UIEvent<HTMLDivElement>) => {
+    if (!scrollRef.current) return;
+    const scrollLeft = scrollRef.current.scrollLeft;
+    const rawVal = minVal + (scrollLeft / (tickSpacing * 10));
+    
+    // clamp and format
+    let clamped = Math.min(Math.max(rawVal, minVal), maxVal);
+    clamped = Math.round(clamped * 10) / 10;
+    
+    if (value !== clamped) {
+      onChange(clamped);
+    }
+  };
+
+  return (
+    <div className="relative w-full h-32 select-none">
+      {/* Center Line Indicator */}
+      <div className="absolute top-0 bottom-6 left-1/2 -translate-x-1/2 w-[2px] bg-zinc-900 z-10 rounded-full" />
+      
+      {/* Masking Gradient for faded edges */}
+      <div className="absolute inset-0 pointer-events-none z-10 bg-gradient-to-r from-white via-transparent to-white" />
+
+      {/* Scrollable Area */}
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="w-full h-full overflow-x-auto hide-scrollbar flex items-end pb-8"
+        style={{ scrollSnapType: 'x mandatory' }}
+      >
+        <div style={{ width: paddingX, flexShrink: 0 }} />
+        
+        {/* Render Ticks array */}
+        <div className="flex items-end h-16 w-[11000px] relative">
+          {/* We use a background pattern to render ticks massively efficiently */}
+          <div 
+             className="absolute bottom-0 left-0 h-full flex"
+             style={{ width: tickCount * tickSpacing }}
+          >
+             {Array.from({ length: Math.ceil(tickCount / 10) + 1 }).map((_, i) => (
+                <div key={i} className="flex items-end h-full w-[100px] shrink-0 border-l border-zinc-300 relative justify-between">
+                   {/* Main tick (kg mark) */}
+                   <span className="absolute top-full mt-2 -translate-x-1/2 text-xs font-medium text-zinc-500">
+                     {minVal + i}
+                   </span>
+                   {/* Sub ticks (0.1 marks) */}
+                   {Array.from({ length: 9 }).map((_, j) => {
+                      const isHalf = j === 4;
+                      return (
+                        <div 
+                           key={j} 
+                           className={`w-[1px] bg-zinc-300 ${isHalf ? 'h-8' : 'h-4'} shrink-0`}
+                           style={{ marginLeft: 9 }}
+                        />
+                      )
+                   })}
+                </div>
+             ))}
+          </div>
+        </div>
+
+        <div style={{ width: paddingX, flexShrink: 0 }} />
+      </div>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}} />
+    </div>
+  );
+};
+
+
+export default function Onboarding({ onComplete }: OnboardingProps) {
+  const [step, setStep] = useState(1);
+  const TOTAL_STEPS = 5;
+
+  const [answers, setAnswers] = useState({
+    weightUnit: 'kg',
+    bodyWeight: 80.0,
+    focusAreas: [] as string[],
+    primaryGoal: '',
+    audioFeedbackAllowed: null as boolean | null
+  });
+
+  const nextStep = () => {
+    if (step < TOTAL_STEPS) setStep(prev => prev + 1);
+    else onComplete();
+  };
+
+  const prevStep = () => {
+    if (step > 1) setStep(prev => prev - 1);
+  };
+
+  const toggleFocusArea = (area: string) => {
+    setAnswers(prev => {
+      const focusAreas = prev.focusAreas.includes(area) 
+        ? prev.focusAreas.filter(i => i !== area)
+        : [...prev.focusAreas, area];
+      return { ...prev, focusAreas };
+    });
+  };
+
+  // --- Layout Wrappers ---
+
+  const renderHeader = (title: string, showBack = true) => (
+    <div className="pt-12 pb-6 px-6">
+      <div className="flex items-center w-full mb-8 gap-4">
+        {showBack ? (
+          <button 
+            onClick={prevStep}
+            className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center active:scale-95 transition-transform"
+          >
+            <ArrowLeft className="w-5 h-5 text-zinc-800" />
+          </button>
+        ) : (
+          <div className="w-10 h-10" /> // spacer
+        )}
+        
+        {/* Thin progress bar */}
+        <div className="flex-1 h-1 bg-zinc-200 rounded-full overflow-hidden">
+          <motion.div 
+            initial={{ width: `${((step - 1) / TOTAL_STEPS) * 100}%` }}
+            animate={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
+            transition={{ ease: "easeInOut", duration: 0.3 }}
+            className="h-full bg-zinc-900 rounded-full"
+          />
+        </div>
+      </div>
+      <h2 className="text-4xl font-extrabold text-zinc-900 tracking-tight leading-tight px-1">
+        {title}
+      </h2>
+    </div>
+  );
+
+  const renderFooter = (disabled: boolean, customText = "Continue") => (
+    <div className="px-6 pb-12 pt-4 mt-auto">
+      <button 
+        onClick={nextStep}
+        disabled={disabled}
+        className="w-full py-5 rounded-full text-lg font-bold transition-all disabled:bg-zinc-100 disabled:text-zinc-400 bg-zinc-900 text-white active:scale-[0.98]"
+      >
+        {customText}
+      </button>
+    </div>
+  );
+
+  // --- Screens ---
+
+  const renderBodyWeight = () => (
+    <motion.div 
+      key="step1"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="absolute inset-0 flex flex-col bg-white overflow-hidden"
+    >
+      {renderHeader("Calibrate your AI body model")}
+      
+      <div className="flex-1 flex flex-col items-center justify-center -mt-10">
+        
+        {/* Lbs / Kg Toggle */}
+        <div className="bg-zinc-100/80 p-1.5 rounded-2xl flex items-center w-48 mb-8">
+           <button 
+             onClick={() => setAnswers({...answers, weightUnit: 'lbs'})}
+             className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${answers.weightUnit === 'lbs' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}
+           >
+             lbs
+           </button>
+           <button 
+             onClick={() => setAnswers({...answers, weightUnit: 'kg'})}
+             className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${answers.weightUnit === 'kg' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}
+           >
+             Kg
+           </button>
+        </div>
+
+        <p className="text-zinc-500 font-medium mb-1">Current Body Weight</p>
+        <h1 className="text-5xl font-extrabold tracking-tight text-zinc-900 mb-12">
+          {answers.bodyWeight.toFixed(1)} <span className="text-4xl">{answers.weightUnit}</span>
+        </h1>
+
+        <WeightRuler 
+          value={answers.bodyWeight} 
+          unit={answers.weightUnit} 
+          onChange={(val) => setAnswers({...answers, bodyWeight: val})}
+        />
+        
+      </div>
+      {renderFooter(false)}
+    </motion.div>
+  );
+
+  const renderFocusAreas = () => (
+    <motion.div 
+      key="step2"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
+    >
+      {renderHeader("Which lifts do you want to perfect?")}
+      <div className="px-6 flex flex-col gap-4">
+        {[
+          { id: 'squat', title: 'Squat & Lower Body', icon: Dumbbell },
+          { id: 'deadlift', title: 'Deadlift & Posterior Chain', icon: Zap },
+          { id: 'bench', title: 'Bench Press & Chest', icon: Crosshair },
+          { id: 'overhead', title: 'Overhead Press & Shoulders', icon: TrendingUp },
+          { id: 'olympic', title: 'Athletic / Olympic Lifts', icon: Activity },
+        ].map(item => (
+          <OptionCard 
+            key={item.id}
+            icon={item.icon}
+            title={item.title}
+            selected={answers.focusAreas.includes(item.title)}
+            onClick={() => toggleFocusArea(item.title)}
+            multi
+          />
+        ))}
+      </div>
+      <div className="mt-6">
+        {renderFooter(answers.focusAreas.length === 0)}
+      </div>
+    </motion.div>
+  );
+
+  const renderMotivation = () => (
+    <motion.div 
+      key="step3"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto pb-24"
+    >
+      {renderHeader("Why do you want to improve your form?")}
+      <div className="px-6 flex flex-col gap-4">
+        {[
+          { id: 'injuries', title: 'Prevent injuries & train pain-free', icon: Shield },
+          { id: 'prs', title: 'Push heavier PRs safely', icon: TrendingUp },
+          { id: 'muscle', title: 'Maximize muscle growth', icon: Dumbbell },
+          { id: 'mind-muscle', title: 'Improve mind-muscle connection', icon: Brain },
+        ].map(item => (
+          <OptionCard 
+            key={item.id}
+            icon={item.icon}
+            title={item.title}
+            selected={answers.primaryGoal === item.title}
+            onClick={() => setAnswers({...answers, primaryGoal: item.title})}
+          />
+        ))}
+      </div>
+      <div className="mt-6">
+        {renderFooter(!answers.primaryGoal)}
+      </div>
+    </motion.div>
+  );
+
+  const renderAudioFeedback = () => (
+    <motion.div 
+      key="step4"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="absolute inset-0 flex flex-col bg-white"
+    >
+      {renderHeader("Real-time form corrections")}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 -mt-20">
+        <div className="bg-zinc-100/80 rounded-[32px] p-6 w-full max-w-sm text-center">
+          <Volume2 className="w-10 h-10 mx-auto text-zinc-800 mb-4" />
+          <h3 className="font-bold text-xl px-4">Audio Feedback</h3>
+          <p className="text-zinc-500 text-sm mt-2 mb-6 px-2">
+            Cal AI can give you audio cues mid-set if your form breaks down.
+          </p>
+          
+          <div className="flex items-center bg-white rounded-2xl border border-zinc-200 overflow-hidden shadow-sm">
+            <button 
+               onClick={() => setAnswers({...answers, audioFeedbackAllowed: false})}
+               className={`flex-1 py-4 text-center font-medium ${answers.audioFeedbackAllowed === false ? 'bg-zinc-100 text-zinc-900 border-r border-zinc-200' : 'text-zinc-500 hover:bg-zinc-50 border-r border-zinc-200'}`}
+            >
+              Skip Audio
+            </button>
+            <button 
+               onClick={() => setAnswers({...answers, audioFeedbackAllowed: true})}
+               className={`flex-1 py-4 text-center font-semibold ${answers.audioFeedbackAllowed === true ? 'bg-zinc-900 text-white' : 'text-zinc-900 hover:bg-zinc-50'}`}
+            >
+              Enable
+            </button>
+          </div>
+        </div>
+      </div>
+      {renderFooter(answers.audioFeedbackAllowed === null)}
+    </motion.div>
+  );
+
+  const renderFinal = () => (
+    <motion.div 
+      key="step5"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="absolute inset-0 flex flex-col bg-white items-center justify-center"
+    >
+       <div className="flex-1 flex flex-col flex-center items-center justify-center px-8 text-center mt-12">
+          {/* Big Illustration Graphic (Finger Snap/Heart) */}
+          <div className="w-64 h-64 rounded-full bg-gradient-to-br from-zinc-50 via-zinc-100 to-zinc-50 flex items-center justify-center mb-8 relative">
+             <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9IiNkNGQ0ZDgiLz48L3N2Zz4=')] opacity-50 [mask-image:radial-gradient(circle_at_center,black,transparent)]" />
+             <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200 relative z-10 z-[20] rotate-[-5deg]">
+               <Activity strokeWidth={2.5} className="w-16 h-16 text-zinc-900" />
+             </div>
+             
+             {/* Small decorations */}
+             <div className="absolute top-10 right-14 w-3 h-3 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '100ms'}} />
+             <div className="absolute bottom-20 left-12 w-2 h-2 bg-zinc-800 rounded-full animate-bounce" style={{ animationDelay: '300ms'}} />
+          </div>
+
+          <div className="flex items-center gap-2 mb-4">
+             <div className="w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center">
+                <CheckCircle className="w-3 h-3 text-zinc-900" />
+             </div>
+             <p className="font-semibold text-zinc-800 text-sm">Calibration Complete</p>
+          </div>
+          
+          <h1 className="text-4xl font-extrabold tracking-tight text-zinc-900 leading-tight">
+            Time to analyze your first lift!
+          </h1>
+       </div>
+
+       <div className="w-full px-6 mb-12">
+          <div className="bg-[#f4f4f5] p-5 rounded-3xl text-center relative">
+             <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-zinc-200 border-4 border-white flex items-center justify-center">
+                <Shield className="w-3 h-3 text-zinc-600" />
+             </div>
+             <h4 className="font-bold text-zinc-900 mb-2 mt-1">100% Private Processing</h4>
+             <p className="text-xs text-zinc-500 font-medium leading-relaxed">
+               Your videos stay on your device.<br/>We never store or share your workout footage.
+             </p>
+          </div>
+       </div>
+
+       <div className="w-full">
+         {renderFooter(false, "Get Started")}
+       </div>
+    </motion.div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-white font-sans overflow-hidden">
+      <AnimatePresence mode="wait">
+        {step === 1 && renderBodyWeight()}
+        {step === 2 && renderFocusAreas()}
+        {step === 3 && renderMotivation()}
+        {step === 4 && renderAudioFeedback()}
+        {step === 5 && renderFinal()}
+      </AnimatePresence>
+    </div>
+  );
+}

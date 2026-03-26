@@ -65,8 +65,8 @@ export function FreeTrialPopup() {
             </button>
 
             <div className="p-8 sm:p-10 text-center">
-              <div className="mx-auto mb-6 flex h-28 sm:h-32 items-center justify-center">
-                <img src="/logo/Formax%20logo.png" alt="Form Max" className="h-full w-auto object-contain dark:invert" />
+              <div className="mx-auto mb-6 flex h-20 sm:h-24 items-center justify-center">
+                <img src="/logo/Formax%20logo%20horizontal.png" alt="Form Max" className="h-full w-auto object-contain dark:invert" />
               </div>
 
               <h2 className="mb-2 text-2xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-3xl">
