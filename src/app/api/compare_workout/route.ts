@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI, createPartFromText } from "@google/genai";
+import { GoogleGenAI, createPartFromText, type Part } from "@google/genai";
 import { Storage } from "@google-cloud/storage";
 import fs from "node:fs";
 import path from "node:path";
@@ -372,7 +372,7 @@ async function runBiomechanicsAnalysis(videoPart: { inlineData: { mimeType: stri
     const badRef = pickRandom(refs.bad);
 
     // Build content parts: prompt → [good ref] → [bad ref] → user video
-    const contentParts: Array<Record<string, unknown>> = [];
+    const contentParts: Part[] = [];
 
     // Few-shot preamble if we have references
     if (goodRef || badRef) {
