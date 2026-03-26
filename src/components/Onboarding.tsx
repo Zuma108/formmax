@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ThumbsUp, ThumbsDown, Camera, Smartphone, ScanFace, Activity, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, ThumbsUp, ThumbsDown, Camera, Smartphone, ScanFace, Activity, CheckCircle2, Bell } from 'lucide-react';
 
 interface OnboardingProps {
   onComplete: () => void;
 }
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
-  const [step, setStep] = useState(0); // 0 = Landing, 1-12 = Onboarding Questions
+  const [step, setStep] = useState(0); // 0 = Landing, 1-15 = Onboarding Questions
   
   // Expanded State for user answers
   const [answers, setAnswers] = useState({
@@ -24,10 +24,14 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     setupPref: '',
     triedApps: null as boolean | null,
     source: '',
+    weight: 150,
+    weightUnit: 'lbs' as 'lbs' | 'kg',
+    height: 170,
+    heightUnit: 'cm' as 'cm' | 'ft',
     email: ''
   });
 
-  const TOTAL_STEPS = 12;
+  const TOTAL_STEPS = 15;
 
   const nextStep = () => {
     if (step < TOTAL_STEPS) setStep(step + 1);
@@ -533,9 +537,186 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     </motion.div>
   );
 
-  const renderStep12 = () => (
+  const renderStep12 = () => {
+    const minW = answers.weightUnit === 'lbs' ? 80 : 36;
+    const maxW = answers.weightUnit === 'lbs' ? 400 : 181;
+    const displayWeight = answers.weight;
+    return (
+      <motion.div
+        key="step12"
+        initial={{ opacity: 0, x: 50 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -50 }}
+        className="absolute inset-0 flex flex-col bg-white"
+      >
+        {renderHeader("What's your weight?", "Help us calibrate your body mechanics model.")}
+        <div className="px-6 flex flex-col items-center gap-8 flex-1">
+          <div className="flex items-center gap-2">
+            {(['lbs', 'kg'] as const).map((unit) => (
+              <button
+                key={unit}
+                onClick={() => {
+                  const converted = unit === 'kg'
+                    ? Math.round(answers.weight / 2.205)
+                    : Math.round(answers.weight * 2.205);
+                  setAnswers({ ...answers, weightUnit: unit, weight: converted });
+                }}
+                className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+                  answers.weightUnit === unit ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-500'
+                }`}
+              >
+                {unit}
+              </button>
+            ))}
+          </div>
+          <div className="text-center">
+            <span className="text-7xl font-extrabold text-zinc-900">{displayWeight}</span>
+            <span className="text-2xl font-semibold text-zinc-400 ml-2">{answers.weightUnit}</span>
+          </div>
+          <input
+            type="range"
+            min={minW}
+            max={maxW}
+            step={1}
+            value={answers.weight}
+            onChange={(e) => setAnswers({ ...answers, weight: Number(e.target.value) })}
+            className="w-full h-2 accent-zinc-900 cursor-pointer"
+            style={{ touchAction: 'none' }}
+          />
+          <div className="flex justify-between w-full text-xs text-zinc-400 font-medium -mt-4">
+            <span>{minW} {answers.weightUnit}</span>
+            <span>{maxW} {answers.weightUnit}</span>
+          </div>
+        </div>
+        {renderFooter(false)}
+      </motion.div>
+    );
+  };
+
+  const renderStep13 = () => {
+    const isMetric = answers.heightUnit === 'cm';
+    const minH = isMetric ? 120 : 48;
+    const maxH = isMetric ? 230 : 96;
+    const displayHeight = isMetric
+      ? `${answers.height} cm`
+      : `${Math.floor(answers.height / 12)}′ ${answers.height % 12}″`;
+    return (
+      <motion.div
+        key="step13"
+        initial={{ opacity: 0, x: 50 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -50 }}
+        className="absolute inset-0 flex flex-col bg-white"
+      >
+        {renderHeader("What's your height?", "Used to personalize movement range expectations.")}
+        <div className="px-6 flex flex-col items-center gap-8 flex-1">
+          <div className="flex items-center gap-2">
+            {(['cm', 'ft'] as const).map((unit) => (
+              <button
+                key={unit}
+                onClick={() => {
+                  const converted = unit === 'ft'
+                    ? Math.round(answers.height / 2.54)
+                    : Math.round(answers.height * 2.54);
+                  setAnswers({ ...answers, heightUnit: unit, height: converted });
+                }}
+                className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+                  answers.heightUnit === unit ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-500'
+                }`}
+              >
+                {unit}
+              </button>
+            ))}
+          </div>
+          <div className="text-center">
+            <span className="text-6xl font-extrabold text-zinc-900">{displayHeight}</span>
+          </div>
+          <input
+            type="range"
+            min={minH}
+            max={maxH}
+            step={1}
+            value={answers.height}
+            onChange={(e) => setAnswers({ ...answers, height: Number(e.target.value) })}
+            className="w-full h-2 accent-zinc-900 cursor-pointer"
+            style={{ touchAction: 'none' }}
+          />
+          <div className="flex justify-between w-full text-xs text-zinc-400 font-medium -mt-4">
+            <span>{isMetric ? `${minH} cm` : `${Math.floor(minH / 12)}′ ${minH % 12}″`}</span>
+            <span>{isMetric ? `${maxH} cm` : `${Math.floor(maxH / 12)}′ ${maxH % 12}″`}</span>
+          </div>
+        </div>
+        {renderFooter(false)}
+      </motion.div>
+    );
+  };
+
+  const renderStep14 = () => (
+    <motion.div
+      key="step14"
+      initial={{ opacity: 0, x: 50 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -50 }}
+      className="absolute inset-0 flex flex-col bg-white"
+    >
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 pt-14 pb-6">
+          <div className="flex items-center gap-4 mb-8">
+            <button
+              onClick={prevStep}
+              className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center active:scale-95 transition-transform shrink-0"
+            >
+              <ArrowLeft className="w-5 h-5 text-zinc-800" />
+            </button>
+            <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: `${((step - 1) / TOTAL_STEPS) * 100}%` }}
+                animate={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
+                className="h-full bg-zinc-800"
+              />
+            </div>
+          </div>
+          <h2 className="text-3xl font-extrabold text-zinc-900 tracking-tight leading-tight mb-2">
+            Stay on Track
+          </h2>
+          <p className="text-zinc-500 text-base leading-relaxed mb-8">
+            Allow permissions for the best results.
+          </p>
+          <div className="flex flex-col gap-4">
+            {[
+              {
+                icon: <Activity className="w-6 h-6 text-blue-500" />,
+                bg: 'bg-blue-50',
+                title: 'Real-time Cues',
+                desc: 'Get audio feedback mid-set if your form breaks down.'
+              },
+              {
+                icon: <Bell className="w-6 h-6 text-emerald-500" />,
+                bg: 'bg-emerald-50',
+                title: 'Workout Summaries',
+                desc: 'Receive push notifications when your AI analysis is ready.'
+              }
+            ].map((item) => (
+              <div key={item.title} className="flex items-start gap-4 p-5 bg-zinc-50 rounded-2xl border border-zinc-100">
+                <div className={`w-12 h-12 rounded-full ${item.bg} flex items-center justify-center shrink-0`}>
+                  {item.icon}
+                </div>
+                <div>
+                  <h3 className="font-bold text-zinc-900 mb-1">{item.title}</h3>
+                  <p className="text-sm text-zinc-500">{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {renderFooter(false, "Allow & Continue")}
+    </motion.div>
+  );
+
+  const renderStep15 = () => (
     <motion.div 
-      key="step12"
+      key="step15"
       initial={{ opacity: 0, x: 50 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -50 }}
@@ -584,6 +765,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         {step === 10 && renderStep10()}
         {step === 11 && renderStep11()}
         {step === 12 && renderStep12()}
+        {step === 13 && renderStep13()}
+        {step === 14 && renderStep14()}
+        {step === 15 && renderStep15()}
       </AnimatePresence>
     </div>
   );
