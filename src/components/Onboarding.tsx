@@ -60,14 +60,21 @@ const WeightRuler = ({ value, onChange, unit }: { value: number, onChange: (v: n
   const maxVal = 150;
   const tickCount = (maxVal - minVal) * 10;
 
+  // Step 1: measure viewport half-width to create centering padding
   useEffect(() => {
     if (scrollRef.current) {
-       const w = scrollRef.current.clientWidth / 2;
-       setPaddingX(w);
-       const initialScrollLeft = ((value - minVal) * 10) * tickSpacing;
-       scrollRef.current.scrollLeft = initialScrollLeft;
+      setPaddingX(scrollRef.current.clientWidth / 2);
     }
   }, []);
+
+  // Step 2: set initial scroll AFTER padding divs are rendered
+  // (paddingX state update causes re-render; setting scroll here ensures DOM is stable)
+  useEffect(() => {
+    if (paddingX > 0 && scrollRef.current) {
+      scrollRef.current.scrollLeft = (value - minVal) * tickSpacing * 10;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paddingX]);
 
   const handleScroll = (e: UIEvent<HTMLDivElement>) => {
     if (!scrollRef.current) return;
@@ -89,7 +96,7 @@ const WeightRuler = ({ value, onChange, unit }: { value: number, onChange: (v: n
         ref={scrollRef}
         onScroll={handleScroll}
         className="w-full h-full overflow-x-auto hide-scrollbar flex items-end pb-8"
-        style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' as any, touchAction: 'pan-x' }}
+        style={{ WebkitOverflowScrolling: 'touch' as any, touchAction: 'pan-x' }}
       >
         <div style={{ width: paddingX, flexShrink: 0 }} />
         <div className="flex items-end h-16 w-[11000px] relative">
