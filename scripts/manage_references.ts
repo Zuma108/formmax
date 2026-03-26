@@ -324,8 +324,9 @@ async function reregisterAll() {
           const [buffer] = await storage.bucket(BUCKET_NAME).file(gcsPath).download();
 
           // Re-upload to Gemini File API
+          const uint8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
           const uploadResult = await genai.files.upload({
-            file: new Blob([buffer], { type: ref.mime_type }),
+            file: new Blob([uint8], { type: ref.mime_type }),
             config: {
               displayName: `${ref.id} — ${ref.label}`,
               mimeType: ref.mime_type,
