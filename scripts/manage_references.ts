@@ -49,7 +49,7 @@ if (fs.existsSync(envPath)) {
 
 // ─── Config ──────────────────────────────────────────────────────
 const REGISTRY_PATH = path.join(__dirname, "..", "data", "video_references.json");
-const BUCKET_NAME = process.env.GCS_BUCKET;
+const BUCKET_NAME = process.env.GCS_BUCKET as string;
 if (!BUCKET_NAME) throw new Error("GCS_BUCKET env var is not set");
 const VALID_EXERCISES = ["deadlift", "squat", "bench_press"] as const;
 const VALID_QUALITIES = ["good", "bad"] as const;
