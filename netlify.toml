@@ -3,8 +3,6 @@
 
 [functions]
   external_node_modules = ["@google-cloud/storage"]
-  # Gemini runs 3 sequential AI passes; needs longer than the 10s default
-  timeout = 60
 
 # Daily Gemini File API refresh — re-uploads all GCS reference clips to get fresh 48h URIs.
 # Requires REREGISTER_SECRET, GCS_BUCKET, GEMINI_API_KEY, and GOOGLE_APPLICATION_CREDENTIALS
