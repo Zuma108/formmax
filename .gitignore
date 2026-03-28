@@ -48,3 +48,6 @@ involuted-river-490405-h6-ce541aa2ddec.json
 *-service-account.json
 *-credentials.json
 
+
+# clerk configuration (can include secrets)
+/.clerk/

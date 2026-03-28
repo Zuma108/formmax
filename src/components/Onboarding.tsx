@@ -118,10 +118,7 @@ const WeightRuler = ({ value, onChange, unit }: { value: number, onChange: (v: n
         </div>
         <div style={{ width: paddingX, flexShrink: 0 }} />
       </div>
-      <style dangerouslySetInnerHTML={{__html: `
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}} />
+
     </div>
   );
 };
@@ -497,7 +494,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     >
       {renderHeader("AI Coach Strictness", "How demanding should your AI be?")}
       <div className="px-6 flex flex-col gap-4">
-        <OptionCard icon={Gauge} title="Strict (Form Nazi)" selected={answers.strictness === 'Strict'} onClick={() => setAnswers({...answers, strictness: 'Strict'})} />
+        <OptionCard icon={Gauge} title="Strict (No Mercy)" selected={answers.strictness === 'Strict'} onClick={() => setAnswers({...answers, strictness: 'Strict'})} />
         <OptionCard icon={Settings} title="Balanced (Optimal)" selected={answers.strictness === 'Balanced'} onClick={() => setAnswers({...answers, strictness: 'Balanced'})} />
         <OptionCard icon={Flame} title="Hype Man (Forgiving)" selected={answers.strictness === 'Hype Man'} onClick={() => setAnswers({...answers, strictness: 'Hype Man'})} />
       </div>

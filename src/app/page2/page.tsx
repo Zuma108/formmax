@@ -11,6 +11,7 @@ import {
  Target, TrendingUp, Award, Shield, Edit
 } from 'lucide-react';
 import Webcam from 'react-webcam';
+import { useUser, UserButton, SignInButton } from '@clerk/nextjs';
 
 const MOCK_GRAPH_DATA = [
  { subject: 'Power', Aura: 88, GoldStandard: 95, fullMark: 100 },
@@ -21,6 +22,7 @@ const MOCK_GRAPH_DATA = [
 export default function MobileApp() {
  const [view, setView] = useState<'HOME' | 'CAMERA' | 'PROCESSING' | 'RESULT'>('HOME');
  const [activeTab, setActiveTab] = useState<'Home' | 'Progress' | 'Community' | 'Profile'>('Home');
+ const { user, isSignedIn } = useUser();
  const [processingStep, setProcessingStep] = useState(0);
  const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
  const [result, setResult] = useState<any>(null);
@@ -240,12 +242,12 @@ export default function MobileApp() {
  {jointData.map((joint) => {
  const c = scoreColor(joint.score);
  return (
- <div key={joint.name} className={`flex-1 min-w-[100px] ${c.bg} rounded-2xl p-4 border ${c.border}`}>
- <span className={`text-2xl font-black ${c.text}`}>{joint.score}</span>
- <p className="text-zinc-500 text-xs font-semibold mt-0.5">{joint.name}</p>
- <div className="mt-3">
+ <div key={joint.name} className={`flex-1 min-w-[90px] ${c.bg} rounded-2xl p-4 border ${c.border}`}>
+ <div className="flex items-center gap-2">
  <Ring score={joint.score} size={40} stroke={4} />
+ <span className={`text-2xl font-black ${c.text}`}>{joint.score}</span>
  </div>
+ <p className="text-zinc-500 text-xs font-semibold mt-1.5">{joint.name}</p>
  </div>
  );
  })}
@@ -497,6 +499,24 @@ export default function MobileApp() {
  </motion.div>
  );
 
+ // --- Coming Soon placeholder (for unbuilt tabs) ---
+ const renderComingSoon = (label: string) => (
+ <motion.div key={`coming-soon-${label}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+ className="absolute inset-0 z-20 bg-[#fafafa] flex flex-col items-center justify-center pb-28"
+ >
+ <div className="flex flex-col items-center gap-4 px-8 text-center">
+ <div className="w-16 h-16 rounded-2xl bg-zinc-100 flex items-center justify-center">
+ <BarChart3 className="w-8 h-8 text-zinc-400" />
+ </div>
+ <h2 className="text-2xl font-black text-zinc-900">{label}</h2>
+ <p className="text-zinc-400 font-medium text-sm">
+ This feature is coming soon.
+ </p>
+ </div>
+ {renderBottomNav()}
+ </motion.div>
+ );
+
  // --- Profile Page ---
  const renderProfile = () => (
  <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -504,16 +524,28 @@ export default function MobileApp() {
  >
  {/* User Card */}
  <div className="mx-6 mt-14 bg-white rounded-3xl p-5 shadow-sm border border-zinc-100 flex items-center gap-4 mb-4">
- <div className="w-14 h-14 rounded-full bg-zinc-200 flex items-center justify-center">
+ <div className="w-14 h-14 rounded-full bg-zinc-200 flex items-center justify-center shrink-0 overflow-hidden">
+ {isSignedIn ? (
+ <UserButton appearance={{ elements: { avatarBox: 'w-14 h-14' } }} />
+ ) : (
  <User className="w-7 h-7 text-zinc-500" />
+ )}
  </div>
- <div className="flex-1">
- <div className="flex items-center gap-2">
- <h2 className="font-bold text-lg text-zinc-900">Enter your name</h2>
- <Edit className="w-4 h-4 text-zinc-400" />
+ <div className="flex-1 min-w-0">
+ <h2 className="font-bold text-lg text-zinc-900 truncate">
+ {isSignedIn ? (user.fullName || user.firstName || user.username || 'Athlete') : 'Guest'}
+ </h2>
+ <p className="text-zinc-500 text-sm truncate">
+ {isSignedIn ? (user.primaryEmailAddress?.emailAddress ?? 'AuraFit Member') : 'AuraFit Member'}
+ </p>
  </div>
- <p className="text-zinc-500 text-sm">AuraFit Member</p>
- </div>
+ {!isSignedIn && (
+ <SignInButton>
+ <button className="px-3 py-1.5 rounded-full bg-zinc-900 text-white text-xs font-semibold shrink-0">
+ Sign In
+ </button>
+ </SignInButton>
+ )}
  </div>
 
  {/* Invite Banner */}
@@ -951,12 +983,13 @@ export default function MobileApp() {
  <h2 className="font-bold text-lg ml-1 mb-2">Rep Breakdown</h2>
  <div className="bg-white rounded-2xl p-4 shadow-sm border border-zinc-100">
  <div className="flex gap-2 mb-3">
- {repAnalysis.rep_scores.map((rep: number, i: number) => {
- const rc = scoreColor(rep);
+ {repAnalysis.rep_scores.map((rep: unknown, i: number) => {
+ const repScore = typeof rep === "number" ? rep : typeof rep === "object" && rep !== null && "score" in rep ? (rep as { score: number }).score : 0;
+ const rc = scoreColor(repScore);
  return (
  <div key={i} className={`flex-1 ${rc.bg} rounded-xl p-2 flex flex-col items-center border ${rc.border}`}>
  <span className="text-[10px] text-zinc-400 font-bold">Rep {i + 1}</span>
- <span className={`font-bold text-sm ${rc.text}`}>{rep}</span>
+ <span className={`font-bold text-sm ${rc.text}`}>{repScore}</span>
  </div>
  );
  })}
@@ -997,6 +1030,9 @@ export default function MobileApp() {
  >
  Back to Home
  </button>
+ <p className="text-zinc-400 text-[10px] text-center mt-4 leading-relaxed px-2">
+ For general fitness guidance only. Not a substitute for professional medical advice. Consult a qualified professional before starting any exercise program.
+ </p>
  </motion.div>
  );
  };
@@ -1006,8 +1042,8 @@ export default function MobileApp() {
 
  <AnimatePresence mode="wait">
  {view === 'HOME' && activeTab === 'Home' && renderHome()}
- {view === 'HOME' && activeTab === 'Progress' && renderProgress()}
- {view === 'HOME' && activeTab === 'Community' && renderCommunity()}
+ {view === 'HOME' && activeTab === 'Progress' && renderComingSoon('Progress')}
+ {view === 'HOME' && activeTab === 'Community' && renderComingSoon('Community')}
  {view === 'HOME' && activeTab === 'Profile' && renderProfile()}
  {view === 'CAMERA' && renderCamera()}
  {view === 'PROCESSING' && renderProcessing()}
