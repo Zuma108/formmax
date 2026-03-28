@@ -3,9 +3,6 @@
 
 [functions]
   external_node_modules = ["@google-cloud/storage"]
-
-[[functions]]
-  path = "/api/compare_workout"
   # Gemini runs 3 sequential AI passes; needs longer than the 10s default
   timeout = 60
 
