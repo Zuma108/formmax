@@ -8,7 +8,7 @@
  *
  * GCS bucket structure:
  *   gs://<BUCKET>/references/<exercise>/<quality>/<filename>.mp4
- *   Example: gs://formmax-references/deadlift/good/deadlift_good_1.mp4
+ *   Example: gs://<GCS_BUCKET>/deadlift/good/deadlift_good_1.mp4
  *
  * Commands:
  *   npx tsx scripts/manage_references.ts add \
@@ -25,7 +25,7 @@
  *
  * Environment (.env.local):
  *   GEMINI_API_KEY        — Gemini API key
- *   GCS_BUCKET            — Bucket name (e.g. formmax-references)
+ *   GCS_BUCKET            — Bucket name
  *   GOOGLE_APPLICATION_CREDENTIALS — Path to GCS service account JSON
  */
 
@@ -49,7 +49,8 @@ if (fs.existsSync(envPath)) {
 
 // ─── Config ──────────────────────────────────────────────────────
 const REGISTRY_PATH = path.join(__dirname, "..", "data", "video_references.json");
-const BUCKET_NAME = process.env.GCS_BUCKET ?? "formmax-references";
+const BUCKET_NAME = process.env.GCS_BUCKET;
+if (!BUCKET_NAME) throw new Error("GCS_BUCKET env var is not set");
 const VALID_EXERCISES = ["deadlift", "squat", "bench_press"] as const;
 const VALID_QUALITIES = ["good", "bad"] as const;
 type Exercise = (typeof VALID_EXERCISES)[number];
@@ -386,7 +387,7 @@ Qualities: good, bad
 
 Environment:
   GEMINI_API_KEY                   Gemini API key
-  GCS_BUCKET                       GCS bucket name (default: formmax-references)
+  GCS_BUCKET                       GCS bucket name (required)
   GOOGLE_APPLICATION_CREDENTIALS   Path to GCS service account JSON
 `);
       break;
