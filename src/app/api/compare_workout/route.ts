@@ -13,8 +13,8 @@ const MAX_VIDEO_DURATION_SECONDS = 60;
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
 const EMBEDDING_MODEL = "gemini-embedding-2-preview";
 const EMBEDDING_DIMENSIONS = 3072; // MRL — Matryoshka Representation Learning
-const ANALYSIS_MODEL_PRIMARY = "gemini-2.5-pro";
-const ANALYSIS_MODEL_FALLBACK = "gemini-2.5-flash";
+const ANALYSIS_MODEL_PRIMARY = "gemini-2.5-flash";  // faster — stays within Netlify's 26s limit
+const ANALYSIS_MODEL_FALLBACK = "gemini-2.5-pro";
 const REFERENCES_PATH = path.join(process.cwd(), "data", "references.json");
 const VIDEO_REFERENCES_PATH = path.join(process.cwd(), "data", "video_references.json");
 
@@ -362,7 +362,7 @@ function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis
     };
 }
 
-async function runBiomechanicsAnalysis(videoPart: { inlineData: { mimeType: string; data: string } }, exercise: string): Promise<BiomechanicsAnalysis> {
+async function runBiomechanicsAnalysis(videoPart: Part, exercise: string): Promise<BiomechanicsAnalysis> {
     const prompt = getAnalysisPrompt(exercise);
     const modelCandidates = [ANALYSIS_MODEL_PRIMARY, ANALYSIS_MODEL_FALLBACK];
 
@@ -419,7 +419,7 @@ async function runBiomechanicsAnalysis(videoPart: { inlineData: { mimeType: stri
     throw lastError instanceof Error ? lastError : new Error("Biomechanics analysis failed");
 }
 
-async function runQualityAndRepAnalysis(videoPart: { inlineData: { mimeType: string; data: string } }, exercise: string): Promise<QualityAndRepAnalysis> {
+async function runQualityAndRepAnalysis(videoPart: Part, exercise: string): Promise<QualityAndRepAnalysis> {
     const exerciseConfig = EXERCISES[exercise];
     const exerciseName = exerciseConfig?.name ?? exercise;
     const qualityPrompt = `You are a strict strength coach evaluating recording quality and rep-by-rep execution quality for a ${exerciseName} video.
@@ -515,24 +515,33 @@ export async function POST(req: NextRequest) {
         const arrayBuffer = await videoFile.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const mimeType = videoFile.type || "video/mp4";
-        const videoPart = {
-            inlineData: {
-                mimeType,
-                data: buffer.toString("base64"),
-            },
-        };
-
         try {
-            console.log("[compare_workout] Starting embedding…");
-            const response = await ai.models.embedContent({
-                model: EMBEDDING_MODEL,
-                contents: [videoPart],
-                config: {
-                    outputDimensionality: EMBEDDING_DIMENSIONS
-                }
-            });
+            console.log("[compare_workout] Starting Files API upload + embedding in parallel…");
+            const blob = new Blob([buffer], { type: mimeType });
+            const inlinePart = { inlineData: { mimeType, data: buffer.toString("base64") } };
+            const [embeddingResponse, uploadedFile] = await Promise.all([
+                ai.models.embedContent({
+                    model: EMBEDDING_MODEL,
+                    contents: [inlinePart],
+                    config: { outputDimensionality: EMBEDDING_DIMENSIONS },
+                }),
+                ai.files.upload({ file: blob, config: { mimeType, displayName: "workout" } }),
+            ]);
 
-            const userEmbedding = response.embeddings?.[0]?.values;
+            // Poll until ACTIVE (usually immediate for short clips)
+            let fileRef = uploadedFile;
+            let pollAttempts = 0;
+            while (fileRef.state === "PROCESSING" && pollAttempts < 10) {
+                await new Promise(r => setTimeout(r, 1500));
+                fileRef = await ai.files.get({ name: uploadedFile.name! });
+                pollAttempts++;
+            }
+            if (fileRef.state !== "ACTIVE") {
+                throw new Error(`File processing failed with state: ${fileRef.state}`);
+            }
+            const fileDataPart: Part = { fileData: { fileUri: fileRef.uri!, mimeType } };
+
+            const userEmbedding = embeddingResponse.embeddings?.[0]?.values;
 
             if (!userEmbedding) {
                 throw new Error("Failed to generate video embedding from Gemini Embedding 2");
@@ -547,11 +556,14 @@ export async function POST(req: NextRequest) {
 
             // Calculate 'Form Match Score' via cosine similarity
             const similarity = computeCosineSimilarity(userEmbedding, proEmbedding);
-            console.log("[compare_workout] Embedding done, starting biomechanics…");
-            const analysis = await runBiomechanicsAnalysis(videoPart, exercise);
-            console.log("[compare_workout] Biomechanics done, starting quality…");
-            const quality = await runQualityAndRepAnalysis(videoPart, exercise);
+            console.log("[compare_workout] File active, starting biomechanics + quality in parallel via fileData…");
+            const [analysis, quality] = await Promise.all([
+                runBiomechanicsAnalysis(fileDataPart, exercise),
+                runQualityAndRepAnalysis(fileDataPart, exercise),
+            ]);
             console.log("[compare_workout] All analyses complete.");
+            // Clean up uploaded file (fire-and-forget)
+            ai.files.delete({ name: uploadedFile.name! }).catch(() => {});
             const score = computeScoring(similarity, analysis, quality);
 
             // Check which reference clips were used for few-shot

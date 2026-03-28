@@ -119,7 +119,7 @@ export default function MobileApp() {
  if (duration) formData.append('duration', String(duration.toFixed(1)));
  
  const controller = new AbortController();
- const timeout = setTimeout(() => controller.abort(), 90_000);
+ const timeout = setTimeout(() => controller.abort(), 55_000);
  const response = await fetch('/api/compare_workout', {
  method: 'POST',
  body: formData,
