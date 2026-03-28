@@ -118,20 +118,27 @@ export default function MobileApp() {
  formData.append('pro_reference_id', selectedExercise);
  if (duration) formData.append('duration', String(duration.toFixed(1)));
  
+ const controller = new AbortController();
+ const timeout = setTimeout(() => controller.abort(), 90_000);
  const response = await fetch('/api/compare_workout', {
  method: 'POST',
  body: formData,
+ signal: controller.signal,
  });
+ clearTimeout(timeout);
 
- if (!response.ok) throw new Error("API failed");
  const data = await response.json();
+ if (!response.ok) throw new Error(data?.error || `API failed (${response.status})`);
  
  setResult(data);
  setTimeout(() => setView('RESULT'), 1000);
  
  } catch (e) {
  console.error(e);
- setAnalysisError(e instanceof Error ? e.message : 'Analysis failed. Please try again.');
+ const msg = e instanceof DOMException && e.name === 'AbortError'
+ ? 'Analysis timed out. Try a shorter clip or better connection.'
+ : e instanceof Error ? e.message : 'Analysis failed. Please try again.';
+ setAnalysisError(msg);
  setResult(null);
  setTimeout(() => setView('RESULT'), 1000);
  }

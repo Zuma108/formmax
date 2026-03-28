@@ -523,6 +523,7 @@ export async function POST(req: NextRequest) {
         };
 
         try {
+            console.log("[compare_workout] Starting embedding…");
             const response = await ai.models.embedContent({
                 model: EMBEDDING_MODEL,
                 contents: [videoPart],
@@ -546,8 +547,11 @@ export async function POST(req: NextRequest) {
 
             // Calculate 'Form Match Score' via cosine similarity
             const similarity = computeCosineSimilarity(userEmbedding, proEmbedding);
+            console.log("[compare_workout] Embedding done, starting biomechanics…");
             const analysis = await runBiomechanicsAnalysis(videoPart, exercise);
+            console.log("[compare_workout] Biomechanics done, starting quality…");
             const quality = await runQualityAndRepAnalysis(videoPart, exercise);
+            console.log("[compare_workout] All analyses complete.");
             const score = computeScoring(similarity, analysis, quality);
 
             // Check which reference clips were used for few-shot
