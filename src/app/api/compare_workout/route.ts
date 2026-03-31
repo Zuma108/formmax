@@ -113,6 +113,8 @@ type RepEvaluation = {
 };
 
 type QualityAndRepAnalysis = {
+    is_valid_exercise_video: boolean;
+    rejection_reason: string;
     confidence_score: number;
     confidence_label: "low" | "medium" | "high";
     camera_angle_quality: number;
@@ -260,6 +262,8 @@ function toQualityAndRepAnalysis(input: unknown): QualityAndRepAnalysis {
         .filter((item): item is RepEvaluation => Boolean(item));
 
     return {
+        is_valid_exercise_video: obj.is_valid_exercise_video !== false,
+        rejection_reason: String(obj.rejection_reason ?? "").trim(),
         confidence_score: clamp(toNumber(obj.confidence_score, 65), 0, 100),
         confidence_label: confidenceLabel,
         camera_angle_quality: clamp(toNumber(obj.camera_angle_quality, 65), 0, 100),
@@ -426,13 +430,24 @@ async function runQualityAndRepAnalysis(videoPart: Part, exercise: string): Prom
 
 Exercise: ${exerciseName}
 
-Task:
+CRITICAL FIRST STEP — CONTENT VALIDATION:
+Before analysing form, determine whether this video actually shows a human performing a recognizable physical exercise.
+Set "is_valid_exercise_video" to FALSE and provide a "rejection_reason" if ANY of these apply:
+- No human body is visible (e.g. a hand, wall, ceiling, desk, floor, random object)
+- A person is visible but NOT performing any exercise movement
+- The video is too dark, blurry, or obscured to see any movement
+- Only a partial body part is visible (e.g. just a hand or foot) without any exercise motion
+If the video is invalid, still return the full JSON structure but with zeroed scores and "rejection_reason" explaining what you see instead of an exercise.
+
+If the video IS valid, proceed with the full analysis:
 1) Assess camera/view quality for reliable form grading. Consider: angle (side view is ideal for most lifts), lighting, full body visibility, bar/equipment visibility, steadiness.
 2) Detect individual reps and score each rep 0-100 based on form quality.
 3) Summarize consistency across reps — flag any progressive form breakdown.
 
 Return ONLY valid JSON with this exact structure:
 {
+  "is_valid_exercise_video": true,
+  "rejection_reason": "",
   "confidence_score": 0,
   "confidence_label": "low",
   "camera_angle_quality": 0,
@@ -447,6 +462,7 @@ Return ONLY valid JSON with this exact structure:
 }
 
 Rules:
+- is_valid_exercise_video: false if no recognizable exercise is being performed. When false, set all scores to 0, detected_rep_count to 0, and provide a clear rejection_reason.
 - confidence_label must be one of: low, medium, high.
 - If lifter or equipment is not fully visible for key phases, confidence_label must be low.
 - camera_angle_quality: 90+ for clear side view, 70-89 for angled view, below 70 for front-on or obstructed.
@@ -564,6 +580,24 @@ export async function POST(req: NextRequest) {
             console.log("[compare_workout] All analyses complete.");
             // Clean up uploaded file (fire-and-forget)
             ai.files.delete({ name: uploadedFile.name! }).catch(() => {});
+
+            // --- Rejection gate: reject if the video doesn't show a real exercise ---
+            const isContentInvalid = !quality.is_valid_exercise_video;
+            const isGhostVideo = quality.detected_rep_count === 0
+                && quality.confidence_label === "low"
+                && quality.body_visibility_quality < 25;
+
+            if (isContentInvalid || isGhostVideo) {
+                const reason = quality.rejection_reason
+                    || "No exercise detected. Make sure your full body and the movement are clearly visible.";
+                console.log(`[compare_workout] Rejected: ${reason}`);
+                return NextResponse.json({
+                    rejected: true,
+                    rejection_reason: reason,
+                    exercise,
+                }, { status: 200 });
+            }
+
             const score = computeScoring(similarity, analysis, quality);
 
             // Check which reference clips were used for few-shot

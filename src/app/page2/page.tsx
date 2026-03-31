@@ -129,6 +129,13 @@ export default function MobileApp() {
 
  const data = await response.json();
  if (!response.ok) throw new Error(data?.error || `API failed (${response.status})`);
+
+ if (data.rejected) {
+ setAnalysisError(data.rejection_reason || 'No exercise detected. Record yourself performing the full movement.');
+ setResult(null);
+ setTimeout(() => setView('RESULT'), 500);
+ return;
+ }
  
  setResult(data);
  setTimeout(() => setView('RESULT'), 1000);
@@ -798,6 +805,10 @@ export default function MobileApp() {
  const renderResult = () => {
  // Error state
  if (analysisError && !result) {
+ const isRejection = analysisError.toLowerCase().includes('no exercise') 
+ || analysisError.toLowerCase().includes('no human')
+ || analysisError.toLowerCase().includes('not visible')
+ || analysisError.toLowerCase().includes('no recognizable');
  return (
  <motion.div
  key="result"
@@ -805,15 +816,24 @@ export default function MobileApp() {
  animate={{ y: 0 }}
  className="absolute inset-0 z-50 bg-[#fafafa] flex flex-col items-center justify-center pt-14 pb-8 px-6 text-zinc-900"
  >
- <div className="bg-red-50 border border-red-200 rounded-3xl p-8 text-center max-w-sm">
- <div className="text-4xl mb-4">⚠️</div>
- <h2 className="font-bold text-xl text-red-700 mb-2">Analysis Failed</h2>
- <p className="text-red-600 text-sm mb-6">{analysisError}</p>
+ <div className={`${isRejection ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'} border rounded-3xl p-8 text-center max-w-sm`}>
+ <div className="text-4xl mb-4">{isRejection ? '🎥' : '⚠️'}</div>
+ <h2 className={`font-bold text-xl ${isRejection ? 'text-amber-800' : 'text-red-700'} mb-2`}>
+ {isRejection ? 'No Exercise Detected' : 'Analysis Failed'}
+ </h2>
+ <p className={`${isRejection ? 'text-amber-700' : 'text-red-600'} text-sm mb-2`}>{analysisError}</p>
+ {isRejection && (
+ <div className="text-zinc-500 text-xs mb-4 space-y-1">
+ <p>Make sure your recording shows:</p>
+ <p>Full body visible performing the movement</p>
+ <p>Good lighting &amp; a clear side-angle view</p>
+ </div>
+ )}
  <button
  className="w-full py-3 rounded-2xl bg-zinc-900 text-white font-bold active:scale-95 transition-transform"
  onClick={() => { setAnalysisError(null); setView('CAMERA'); }}
  >
- Try Again
+ {isRejection ? 'Record Again' : 'Try Again'}
  </button>
  </div>
  </motion.div>
