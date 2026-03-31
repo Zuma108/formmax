@@ -734,13 +734,8 @@ export default function MobileApp() {
  key="processing"
  initial={{ opacity: 0 }}
  animate={{ opacity: 1 }}
- className="absolute inset-0 z-40 bg-zinc-900 text-white flex flex-col pt-14 px-6 overflow-hidden"
+ className="absolute inset-0 z-40 bg-black text-white flex flex-col pt-14 px-6 overflow-hidden"
  >
- <div className="absolute inset-0 opacity-40 z-0">
- <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-amber-500/30 rounded-full blur-[100px] -translate-x-1/2 -translate-y-1/2" />
- <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-fuchsia-600/30 rounded-full blur-[100px] translate-x-1/3 translate-y-1/3" />
- </div>
-
  <header className="relative z-10 flex items-center justify-between mb-8">
  <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center cursor-pointer"
  onClick={() => setView('HOME')}
