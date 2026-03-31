@@ -56,7 +56,7 @@ export default function MobileApp() {
  const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(vp9) ? vp9 : "video/webm";
  mediaRecorderRef.current = new MediaRecorder(webcamRef.current.stream, {
  mimeType,
- videoBitsPerSecond: 5_000_000,
+ videoBitsPerSecond: 2_000_000,
  });
  const chunks: Blob[] = [];
  mediaRecorderRef.current.ondataavailable = (e) => {
@@ -117,6 +117,12 @@ export default function MobileApp() {
  formData.append('exercise', selectedExercise);
  formData.append('pro_reference_id', selectedExercise);
  if (duration) formData.append('duration', String(duration.toFixed(1)));
+
+ // Netlify hard limit: 6MB request payload (4.5MB binary after base64 overhead)
+ const MAX_UPLOAD_BYTES = 4.5 * 1024 * 1024;
+ if (blob.size > MAX_UPLOAD_BYTES) {
+ throw new Error(`Video is too large (${(blob.size / 1024 / 1024).toFixed(1)}MB). Record a shorter clip or use a lower quality camera setting.`);
+ }
  
  const controller = new AbortController();
  const timeout = setTimeout(() => controller.abort(), 55_000);
@@ -126,6 +132,15 @@ export default function MobileApp() {
  signal: controller.signal,
  });
  clearTimeout(timeout);
+
+ const contentType = response.headers.get('content-type') || '';
+ if (!contentType.includes('application/json')) {
+ throw new Error(
+ response.status === 413
+ ? 'Video file is too large for the server. Try a shorter clip.'
+ : `Server error (${response.status}). Please try again.`
+ );
+ }
 
  const data = await response.json();
  if (!response.ok) throw new Error(data?.error || `API failed (${response.status})`);
@@ -614,8 +629,8 @@ export default function MobileApp() {
  ref={webcamRef} 
  videoConstraints={{
   facingMode: 'environment',
-  width: { min: 1280, ideal: 1920 },
-  height: { min: 720, ideal: 1080 },
+  width: { min: 640, ideal: 1280 },
+  height: { min: 480, ideal: 720 },
   frameRate: { ideal: 30, max: 30 },
  }}
  className="w-full h-full object-cover" 
