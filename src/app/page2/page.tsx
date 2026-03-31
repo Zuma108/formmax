@@ -34,7 +34,7 @@ export default function MobileApp() {
  const [recordingTime, setRecordingTime] = useState(0);
  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
  const recordingStartRef = useRef<number>(0);
- const MAX_RECORDING_SECONDS = 60;
+ const MAX_RECORDING_SECONDS = 15;
  const [selectedExercise, setSelectedExercise] = useState<'deadlift' | 'squat' | 'bench_press' | 'generic'>('deadlift');
  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
@@ -645,7 +645,7 @@ export default function MobileApp() {
  <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
  <span className="font-bold text-lg tabular-nums">
  {Math.floor(recordingTime / 60)}:{String(Math.floor(recordingTime % 60)).padStart(2, '0')}
- <span className="text-white/50 text-sm"> / 1:00</span>
+ <span className="text-white/50 text-sm"> / 0:15</span>
  </span>
  </div>
  ) : (
