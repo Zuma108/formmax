@@ -2,17 +2,17 @@
 
 import { motion } from "framer-motion";
 import { ArrowRight, Star } from "lucide-react";
-import AuraGraph from "@/components/AuraGraph";
+import FormaxGraph from "@/components/AuraGraph";
 import { AppleStoreButton, GooglePlayButton } from "@/components/ui/StoreButtons";
 
 export function HeroSection() {
-  const dummyAuraData = [
-    { subject: 'Hip Hinge', Aura: 70, GoldStandard: 90, fullMark: 100 },
-    { subject: 'Bar Path', Aura: 85, GoldStandard: 95, fullMark: 100 },
-    { subject: 'Spine Pos', Aura: 60, GoldStandard: 100, fullMark: 100 },
-    { subject: 'Lockout', Aura: 90, GoldStandard: 90, fullMark: 100 },
-    { subject: 'Pacing', Aura: 80, GoldStandard: 85, fullMark: 100 },
-    { subject: 'Grip', Aura: 95, GoldStandard: 95, fullMark: 100 },
+  const dummyFormaxData = [
+    { subject: 'Hip Hinge', FORMAX: 70, GoldStandard: 90, fullMark: 100 },
+    { subject: 'Bar Path', FORMAX: 85, GoldStandard: 95, fullMark: 100 },
+    { subject: 'Spine Pos', FORMAX: 60, GoldStandard: 100, fullMark: 100 },
+    { subject: 'Lockout', FORMAX: 90, GoldStandard: 90, fullMark: 100 },
+    { subject: 'Pacing', FORMAX: 80, GoldStandard: 85, fullMark: 100 },
+    { subject: 'Grip', FORMAX: 95, GoldStandard: 95, fullMark: 100 },
   ];
 
   return (

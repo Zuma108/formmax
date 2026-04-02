@@ -14,7 +14,7 @@ export function Testimonials() {
     {
       name: "Sarah Jenkins",
       handle: "@gym_girl_sarah",
-      text: "The Aura graph is so addicting. Trying to get my squat to a 99% match! Finally a form checker that doesn't just say 'good'.",
+      text: "The FORMAX graph is so addicting. Trying to get my squat to a 99% match! Finally a form checker that doesn't just say 'good'.",
       avatar: "sarah.jpg"
     },
     {

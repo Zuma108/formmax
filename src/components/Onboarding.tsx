@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, UIEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useUser } from '@clerk/nextjs';
 import { 
   ArrowLeft, Shield, TrendingUp, Dumbbell, Brain, Zap, Volume2, 
   CheckCircle, Crosshair, Activity, User, Mail, Camera, 
@@ -14,6 +15,13 @@ interface OnboardingProps {
 
 // Shared transition for all step slides — snappy native-app feel
 const SLIDE_TRANSITION = { duration: 0.22, ease: [0.32, 0.72, 0, 1] as const };
+
+// RFC 5321/5322-aligned email validation:
+// - local part: 1-64 chars, allows letters/digits/. _ % + - but no leading/trailing/consecutive dots
+// - domain: labels separated by dots, each 1-63 chars of letters/digits/hyphens (no leading/trailing hyphen)
+// - TLD: 2-24 alpha chars
+const EMAIL_REGEX = /^(?!.*\.{2})[a-zA-Z0-9](?:[a-zA-Z0-9._%+\-]{0,62}[a-zA-Z0-9])?@(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,24}$/;
+const isValidEmail = (v: string) => EMAIL_REGEX.test(v.trim().toLowerCase());
 
 // --- Custom Components ---
 
@@ -127,6 +135,7 @@ const WeightRuler = ({ value, onChange, unit }: { value: number, onChange: (v: n
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(1);
   const TOTAL_STEPS = 13;
+  const { user } = useUser();
 
   const [answers, setAnswers] = useState({
     firstName: '',
@@ -146,9 +155,25 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     notificationsAllowed: null as boolean | null
   });
 
+  const saveProfileAndComplete = () => {
+    // Persist onboarding answers so page2 can save them after Clerk sign-up
+    try {
+      localStorage.setItem(
+        'pending_onboarding_profile',
+        JSON.stringify({
+          ...answers,
+          email: answers.email || user?.primaryEmailAddress?.emailAddress,
+        })
+      );
+    } catch (e) {
+      console.error('[onboarding localStorage]', e);
+    }
+    onComplete();
+  };
+
   const nextStep = () => {
     if (step < TOTAL_STEPS) setStep(prev => prev + 1);
-    else onComplete();
+    else saveProfileAndComplete();
   };
 
   const prevStep = () => {
@@ -288,12 +313,21 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             autoCorrect="off"
             spellCheck={false}
             enterKeyHint="go"
-            className="w-full bg-[#f4f4f5] pl-14 pr-4 py-5 rounded-3xl text-zinc-900 font-semibold text-[18px] placeholder:text-zinc-400 placeholder:font-medium focus:outline-none ring-2 ring-transparent focus:ring-zinc-900 transition-all"
+            className={`w-full bg-[#f4f4f5] pl-14 pr-4 py-5 rounded-3xl text-zinc-900 font-semibold text-[18px] placeholder:text-zinc-400 placeholder:font-medium focus:outline-none ring-2 transition-all ${
+              answers.email.length > 0 && !isValidEmail(answers.email)
+                ? 'ring-red-400'
+                : 'ring-transparent focus:ring-zinc-900'
+            }`}
           />
         </div>
+        {answers.email.length > 0 && !isValidEmail(answers.email) && (
+          <p className="text-red-500 text-sm font-medium px-2">
+            Please enter a valid email address (e.g. name@example.com)
+          </p>
+        )}
       </div>
       <div className="flex-1" />
-      <div>{renderFooter(!answers.email.includes('@'))}</div>
+      <div>{renderFooter(!isValidEmail(answers.email))}</div>
     </motion.div>
   );
 
@@ -615,7 +649,15 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
        </div>
 
        <div className="w-full">
-         {renderFooter(false, "Get Started")}
+         <div className="px-6 pb-6 pt-4 mt-auto">
+           <button 
+             onClick={saveProfileAndComplete}
+             style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', minHeight: 56 }}
+             className="w-full py-4 rounded-full text-lg font-bold transition-colors bg-zinc-900 text-white active:bg-zinc-700 active:scale-[0.98]"
+           >
+             Get Started
+           </button>
+         </div>
        </div>
     </motion.div>
   );

@@ -7,7 +7,7 @@ export function SocialProof() {
     { name: "Jeremiah Jones", handle: "@jeremiah.lifts", quote: "Insane precision." },
     { name: "Kadin Kerns", handle: "@kadin_strength", quote: "Fixed my squat wink." },
     { name: "Dawson Gibbs", handle: "@dawson.power", quote: "Literally a coach in your pocket." },
-    { name: "Hussein Farhat", handle: "@hussein_athletics", quote: "The Aura tree is addicting." },
+    { name: "Hussein Farhat", handle: "@hussein_athletics", quote: "The FORMAX tree is addicting." },
     { name: "Alex Eubank", handle: "@alex_eubank", quote: "Must-have for serious lifters." },
   ];
 

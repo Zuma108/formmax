@@ -102,7 +102,7 @@ async function main() {
   const { exercise, video } = parseArgs();
   const { videoPath, cleanupPath } = await resolveVideoPath(video);
 
-  console.log(`🎬 AuraFit Reference Embedding`);
+  console.log(`🎬 FORMAX Reference Embedding`);
   console.log(`   Exercise: ${exercise}`);
   console.log(`   Video:    ${videoPath}`);
   console.log(`   Model:    ${EMBEDDING_MODEL}`);

@@ -13,8 +13,45 @@ export interface ExerciseConfig {
   injuryRiskPatterns: { pattern: string; severity: "caution" | "stop_immediately" }[];
 }
 
+/** User profile context for personalized prompts */
+export interface UserContext {
+  experience?: string | null;
+  strictness?: string | null;
+  injuries?: string[] | null;
+  weaknesses?: string[] | null;
+  focus_areas?: string[] | null;
+  gender?: string | null;
+  body_weight?: number | null;
+  weight_unit?: string | null;
+}
+
+function buildUserContextBlock(ctx?: UserContext): string {
+  if (!ctx) return '';
+  const lines: string[] = [];
+  lines.push('\nATHLETE PROFILE (use this to personalize your analysis):');
+  if (ctx.experience) lines.push(`- Experience Level: ${ctx.experience}`);
+  if (ctx.gender) lines.push(`- Biological Sex: ${ctx.gender}`);
+  if (ctx.body_weight) lines.push(`- Body Weight: ${ctx.body_weight} ${ctx.weight_unit ?? 'kg'}`);
+  if (ctx.strictness) {
+    const tone = ctx.strictness === 'Strict' ? 'Be highly critical. Flag every deviation, no matter how small.'
+      : ctx.strictness === 'Hype Man' ? 'Be encouraging and positive. Focus on what they did well while gently noting improvements.'
+      : 'Be balanced — acknowledge strengths and clearly flag areas to improve.';
+    lines.push(`- Coaching Style: ${ctx.strictness} — ${tone}`);
+  }
+  if (ctx.injuries?.length && !ctx.injuries.includes('None')) {
+    lines.push(`- KNOWN INJURIES/LIMITATIONS: ${ctx.injuries.join(', ')} — Pay EXTRA attention to these areas. Flag ANY movement pattern that could aggravate these joints.`);
+  }
+  if (ctx.weaknesses?.length) {
+    lines.push(`- KNOWN WEAKNESSES: ${ctx.weaknesses.join(', ')} — Actively check for these specific issues and provide targeted cues if detected.`);
+  }
+  if (ctx.focus_areas?.length) {
+    lines.push(`- FOCUS AREAS: ${ctx.focus_areas.join(', ')} — Prioritize analysis of these areas and give more detailed feedback on them.`);
+  }
+  return lines.length > 1 ? lines.join('\n') + '\n' : '';
+}
+
 /** Build the full analysis prompt from an ExerciseConfig */
-export function buildAnalysisPrompt(config: ExerciseConfig): string {
+export function buildAnalysisPrompt(config: ExerciseConfig, userCtx?: UserContext): string {
   const checkpointLines = config.checkpoints
     .map((cp, i) => {
       const good = config.goodFormDescriptors[cp] ?? "";
@@ -30,7 +67,7 @@ export function buildAnalysisPrompt(config: ExerciseConfig): string {
     .join("\n");
 
   return `You are an elite strength & conditioning coach with 20+ years of experience analyzing lifting form via video. You are analyzing a ${config.name.toUpperCase()} video clip.
-
+${buildUserContextBlock(userCtx)}
 ANALYSIS METHOD — For each checkpoint you MUST:
 1. DESCRIBE exactly what you observe in the video (joint angles, bar position, body segments).
 2. COMPARE your observation against both the GOOD FORM and BAD FORM descriptions below.
@@ -198,10 +235,10 @@ export const EXERCISES: Record<string, ExerciseConfig> = {
   },
 };
 
-/** Build the full analysis prompt from an exercise key */
-export function getAnalysisPrompt(exercise: string): string {
+/** Build the full analysis prompt from an exercise key, optionally personalized */
+export function getAnalysisPrompt(exercise: string, userCtx?: UserContext): string {
   const config = EXERCISES[exercise];
-  if (config) return buildAnalysisPrompt(config);
+  if (config) return buildAnalysisPrompt(config, userCtx);
   return GENERIC_EXERCISE_PROMPT;
 }
 

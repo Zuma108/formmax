@@ -20,6 +20,8 @@ export default function RootLayout({
         <ClerkProvider
           signInUrl="/sign-in"
           signUpUrl="/sign-up"
+          signUpForceRedirectUrl="/page2"
+          signInForceRedirectUrl="/page2"
         >
           {children}
         </ClerkProvider>

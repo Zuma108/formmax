@@ -3,16 +3,16 @@
 import React from 'react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 
-interface AuraGraphProps {
+interface FormaxGraphProps {
   data: {
     subject: string;
-    Aura: number;
+    FORMAX: number;
     GoldStandard: number;
     fullMark: number;
   }[];
 }
 
-export default function AuraGraph({ data }: AuraGraphProps) {
+export default function FormaxGraph({ data }: FormaxGraphProps) {
   return (
     <div className="w-full h-64 sm:h-80">
       <ResponsiveContainer width="100%" height="100%">
@@ -28,8 +28,8 @@ export default function AuraGraph({ data }: AuraGraphProps) {
             fillOpacity={0.3}
           />
           <Radar
-            name="Your Aura"
-            dataKey="Aura"
+            name="Your FORMAX"
+            dataKey="FORMAX"
             stroke="#00f0ff"
             fill="#00f0ff"
             fillOpacity={0.5}

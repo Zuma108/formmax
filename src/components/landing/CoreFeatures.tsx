@@ -61,13 +61,13 @@ export function CoreFeatures() {
            </div>
         </FadeInItem>
 
-        {/* Bento Item 4: Gamified Aura */}
+        {/* Bento Item 4: Gamified FORMAX */}
         <FadeInItem className="relative rounded-[2rem] bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-white/10 overflow-hidden p-8 group shadow-sm dark:shadow-none">
            <div className="absolute inset-0 bg-gradient-to-bl from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
            <div className="flex flex-col h-full justify-between">
               <ShieldAlert className="w-8 h-8 text-green-500 dark:text-green-400" />
               <div>
-                <h3 className="text-xl font-semibold text-zinc-900 dark:text-white tracking-tight mb-2">Gamified "Aura"</h3>
+                <h3 className="text-xl font-semibold text-zinc-900 dark:text-white tracking-tight mb-2">Gamified "FORMAX"</h3>
                 <p className="text-zinc-600 dark:text-zinc-400 text-sm">Turn your biomechanics into a visual radar chart. See instantly where your lift is weakest.</p>
               </div>
            </div>

@@ -3,7 +3,9 @@ import { GoogleGenAI, createPartFromText, type Part } from "@google/genai";
 import { Storage } from "@google-cloud/storage";
 import fs from "node:fs";
 import path from "node:path";
-import { EXERCISES, getAnalysisPrompt, GENERIC_EXERCISE_PROMPT } from "@/lib/prompts";
+import { auth } from "@clerk/nextjs/server";
+import { createAdminClient } from "@/lib/supabase";
+import { EXERCISES, getAnalysisPrompt, GENERIC_EXERCISE_PROMPT, type UserContext } from "@/lib/prompts";
 
 // Initialize Gemini SDK
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -366,8 +368,8 @@ function computeScoring(similarityCosine: number, analysis: BiomechanicsAnalysis
     };
 }
 
-async function runBiomechanicsAnalysis(videoPart: Part, exercise: string): Promise<BiomechanicsAnalysis> {
-    const prompt = getAnalysisPrompt(exercise);
+async function runBiomechanicsAnalysis(videoPart: Part, exercise: string, userCtx?: UserContext): Promise<BiomechanicsAnalysis> {
+    const prompt = getAnalysisPrompt(exercise, userCtx);
     const modelCandidates = [ANALYSIS_MODEL_PRIMARY, ANALYSIS_MODEL_FALLBACK];
 
     // Load reference video clips for few-shot comparison
@@ -499,6 +501,17 @@ Rules:
 
 export async function POST(req: NextRequest) {
     try {
+        // Fetch user profile for personalized analysis (non-blocking — graceful fallback)
+        let userCtx: UserContext | undefined;
+        try {
+            const { userId } = await auth();
+            if (userId) {
+                const db = createAdminClient();
+                const { data } = await db.from('user_profiles').select('experience, strictness, injuries, weaknesses, focus_areas, gender, body_weight, weight_unit').eq('clerk_user_id', userId).single();
+                if (data) userCtx = data;
+            }
+        } catch { /* continue without personalization */ }
+
         const formData = await req.formData();
         const videoFile = formData.get("video") as File;
         const exercise = normalizeExerciseKey(formData.get("exercise") as string | null, "deadlift");
@@ -574,7 +587,7 @@ export async function POST(req: NextRequest) {
             const similarity = computeCosineSimilarity(userEmbedding, proEmbedding);
             console.log("[compare_workout] File active, starting biomechanics + quality in parallel via fileData…");
             const [analysis, quality] = await Promise.all([
-                runBiomechanicsAnalysis(fileDataPart, exercise),
+                runBiomechanicsAnalysis(fileDataPart, exercise, userCtx),
                 runQualityAndRepAnalysis(fileDataPart, exercise),
             ]);
             console.log("[compare_workout] All analyses complete.");

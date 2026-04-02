@@ -16,6 +16,7 @@
     "@clerk/nextjs": "^7.0.7",
     "@google-cloud/storage": "^7.19.0",
     "@google/genai": "^1.44.0",
+    "@supabase/supabase-js": "^2.101.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
     "geist": "^1.7.0",

@@ -8,19 +8,47 @@ import {
  Video, History, User, Heart, Mic, Camera,
  Home, BarChart3, Users, Plus, Flame,
  Bell, UserPlus, Settings, Globe, Palette,
- Target, TrendingUp, Award, Shield, Edit
+ Target, TrendingUp, Award, Shield, Edit, Share2,
+ LogOut, Trash2, Mail, FileText, ShieldCheck,
+ MessageSquare, Crosshair, Dumbbell, Eye
 } from 'lucide-react';
 import Webcam from 'react-webcam';
-import { useUser, UserButton, SignInButton } from '@clerk/nextjs';
+import { useUser, UserButton, SignInButton, useClerk } from '@clerk/nextjs';
+import ProgressSection from '@/components/ProgressSection';
 
 const MOCK_GRAPH_DATA = [
- { subject: 'Power', Aura: 88, GoldStandard: 95, fullMark: 100 },
- { subject: 'Grace', Aura: 76, GoldStandard: 90, fullMark: 100 },
- { subject: 'Consistency', Aura: 92, GoldStandard: 98, fullMark: 100 },
+ { subject: 'Power', FORMAX: 88, GoldStandard: 95, fullMark: 100 },
+ { subject: 'Grace', FORMAX: 76, GoldStandard: 90, fullMark: 100 },
+ { subject: 'Consistency', FORMAX: 92, GoldStandard: 98, fullMark: 100 },
 ];
 
+// ── Stable module-level component (must not be defined inside the page) ───
+const ModalShell = ({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) => (
+ <motion.div
+  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+  className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-sm"
+  onClick={onClose}
+ >
+  <motion.div
+   initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+   transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+   className="bg-white rounded-t-[2rem] w-full max-w-md max-h-[85vh] overflow-y-auto px-6 pt-5 pb-10"
+   onClick={e => e.stopPropagation()}
+  >
+   <div className="flex items-center justify-between mb-5">
+    <h2 className="font-bold text-xl text-zinc-900">{title}</h2>
+    <button onClick={onClose} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center">
+     <X className="w-4 h-4 text-zinc-500" />
+    </button>
+   </div>
+   {children}
+  </motion.div>
+ </motion.div>
+);
+
 export default function MobileApp() {
- const [view, setView] = useState<'HOME' | 'CAMERA' | 'PROCESSING' | 'RESULT'>('HOME');
+ const [view, setView] = useState<'HOME' | 'CAMERA' | 'PROCESSING' | 'RESULT' | 'FEEDBACK'>('HOME');
+ const [feedbackType, setFeedbackType] = useState<'feature_request' | 'support'>('feature_request');
  const [activeTab, setActiveTab] = useState<'Home' | 'Progress' | 'Community' | 'Profile'>('Home');
  const { user, isSignedIn } = useUser();
  const [processingStep, setProcessingStep] = useState(0);
@@ -37,6 +65,48 @@ export default function MobileApp() {
  const MAX_RECORDING_SECONDS = 15;
  const [selectedExercise, setSelectedExercise] = useState<'deadlift' | 'squat' | 'bench_press' | 'generic'>('deadlift');
  const [analysisError, setAnalysisError] = useState<string | null>(null);
+ const [sessionId, setSessionId] = useState<string | null>(null);
+ const [shareLoading, setShareLoading] = useState(false);
+ const [postedToCommunity, setPostedToCommunity] = useState(false);
+ // Community tab state
+ const [challenges, setChallenges] = useState<any[]>([]);
+ const [leaderboard, setLeaderboard] = useState<any[]>([]);
+ const [feedPosts, setFeedPosts] = useState<any[]>([]);
+ const [communityLoaded, setCommunityLoaded] = useState(false);
+
+ // User profile from Supabase (onboarding data)
+ const [userProfile, setUserProfile] = useState<{
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  gender: string | null;
+  body_weight: number | null;
+  weight_unit: string | null;
+  experience: string | null;
+  focus_areas: string[] | null;
+  weaknesses: string[] | null;
+  injuries: string[] | null;
+  primary_goal: string | null;
+  strictness: string | null;
+  language: string | null;
+  form_score_targets: Record<string, number> | null;
+  joint_thresholds: Record<string, number> | null;
+  session_replay_autoplay: boolean | null;
+  session_replay_quality: string | null;
+  audio_feedback: boolean | null;
+  notifications_allowed: boolean | null;
+ } | null>(null);
+
+ // Profile modals
+ const [profileModal, setProfileModal] = useState<null | 'personal' | 'preferences' | 'language' | 'targets' | 'focus' | 'joints' | 'exercises' | 'replay' | 'history' | 'historyDetail' | 'deleteConfirm'>(null);
+ const [profileSaving, setProfileSaving] = useState(false);
+ const [profileToast, setProfileToast] = useState<string | null>(null);
+ const [feedbackMessage, setFeedbackMessage] = useState('');
+ // Session history
+ const [sessions, setSessions] = useState<any[]>([]);
+ const [sessionsLoaded, setSessionsLoaded] = useState(false);
+ const [selectedSession, setSelectedSession] = useState<any | null>(null);
+ const [deleteLoading, setDeleteLoading] = useState(false);
 
  const EXERCISE_OPTIONS = [
   { key: 'deadlift' as const, label: 'Deadlift', emoji: '🏋️' },
@@ -44,6 +114,62 @@ export default function MobileApp() {
   { key: 'bench_press' as const, label: 'Bench Press', emoji: '💪' },
   { key: 'generic' as const, label: 'Other', emoji: '🔄' },
  ];
+
+ // Load user profile from Supabase (onboarding data)
+ useEffect(() => {
+  if (!isSignedIn) return;
+
+  // Check if there's pending onboarding data saved before Clerk sign-up
+  const pending = localStorage.getItem('pending_onboarding_profile');
+  if (pending) {
+   try {
+    const answers = JSON.parse(pending);
+    fetch('/api/user/profile', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify(answers),
+    })
+     .then(r => r.ok ? r.json() : null)
+     .then(() => {
+      localStorage.removeItem('pending_onboarding_profile');
+      // Refresh profile state after saving
+      return fetch('/api/user/profile');
+     })
+     .then(r => r && r.ok ? r.json() : null)
+     .then(d => { if (d?.profile) setUserProfile(d.profile); })
+     .catch(console.error);
+   } catch (e) {
+    console.error('[pending onboarding]', e);
+    localStorage.removeItem('pending_onboarding_profile');
+   }
+  } else {
+   fetch('/api/user/profile')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d?.profile) setUserProfile(d.profile); })
+    .catch(console.error);
+  }
+ }, [isSignedIn]);
+
+ // Load community data when tab activates
+ useEffect(() => {
+  if (activeTab !== 'Community' || communityLoaded) return;
+  let cancelled = false;
+  const load = async () => {
+   const [cRes, lRes, fRes] = await Promise.all([
+    fetch('/api/community/challenges'),
+    fetch('/api/community/leaderboard'),
+    fetch('/api/community/feed'),
+   ]);
+   if (cancelled) return;
+   if (cRes.ok) { const d = await cRes.json(); setChallenges(d.challenges ?? []); }
+   if (lRes.ok) { const d = await lRes.json(); setLeaderboard(d.leaderboard ?? []); }
+   if (fRes.ok) { const d = await fRes.json(); setFeedPosts(d.posts ?? []); }
+   setCommunityLoaded(true);
+  };
+  load().catch(console.error);
+  return () => { cancelled = true; };
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [activeTab]);
 
  // --- Handlers ---
 
@@ -153,6 +279,14 @@ export default function MobileApp() {
  }
  
  setResult(data);
+ // Fire-and-forget: save session to Supabase
+ fetch('/api/sessions', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ exercise: selectedExercise, result: data }),
+ }).then(r => r.json()).then(json => {
+  if (json?.id) setSessionId(json.id);
+ }).catch(console.error);
  setTimeout(() => setView('RESULT'), 1000);
  
  } catch (e) {
@@ -166,6 +300,61 @@ export default function MobileApp() {
  }
  };
 
+ // --- Share score card ---
+ const handleShareScore = async () => {
+  if (!result) return;
+  setShareLoading(true);
+  try {
+   const name = user?.firstName ?? 'Athlete';
+   const score = result.final_score ?? result.overall_score ?? 0;
+   const params = new URLSearchParams({
+    score: String(score),
+    exercise: selectedExercise,
+    name,
+    top_priority: result.critique?.grace ?? result.top_priority ?? '',
+    risk: result.injury_risk ?? 'low',
+    ...(sessionId ? { session_id: sessionId } : {}),
+   });
+   const imageUrl = `/api/og/score-card?${params.toString()}`;
+   const response = await fetch(imageUrl);
+   const blob = await response.blob();
+   const file = new File([blob], 'my-formax-score.png', { type: 'image/png' });
+   const hashtags: Record<string, string> = {
+    deadlift: '#DeadliftForm #FormCheck #PowerLifting #FormMax',
+    squat: '#SquatForm #LegDay #FormCheck #FormMax',
+    bench_press: '#BenchPress #ChestDay #FormCheck #FormMax',
+    generic: '#FormCheck #GymTok #FormMax',
+   };
+   const text = `My AI coach just rated my ${selectedExercise.replace(/_/g, ' ')} ${score}/100 💪 Can you beat my FORMAX score? ${hashtags[selectedExercise] ?? hashtags.generic}`;
+   if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file], text });
+   } else {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'my-formax-score.png';
+    link.click();
+   }
+  } catch (e) {
+   if (e instanceof Error && e.name !== 'AbortError') console.error(e);
+  } finally {
+   setShareLoading(false);
+  }
+ };
+
+ const handlePostToCommunity = async () => {
+  if (!sessionId) return;
+  try {
+   await fetch(`/api/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_public: true, caption: null }),
+   });
+   setPostedToCommunity(true);
+  } catch (e) {
+   console.error(e);
+  }
+ };
+
  // --- Screens ---
 
  // --- Helper: color from score ---
@@ -176,7 +365,7 @@ export default function MobileApp() {
  };
 
  // Mock data — would come from user's history
- const auraScore = 87;
+ const formaxScore = 87;
  const jointData = [
  { name: 'Knees', score: 72, icon: '🦵' },
  { name: 'Shoulders', score: 45, icon: '💪' },
@@ -224,7 +413,14 @@ export default function MobileApp() {
  >
  {/* Header */}
  <div className="px-6 pt-14 pb-2 flex items-center justify-between">
- <h1 className="text-2xl font-black tracking-tight text-zinc-900">AuraFit</h1>
+ <div>
+ <img src="/logo/Formax logo horizontal.png" alt="FORMAX" className="h-[45px] object-contain" />
+ {isSignedIn && (
+ <p className="text-zinc-500 text-sm font-medium mt-0.5">
+ Welcome back, {userProfile?.first_name || user?.firstName || 'Athlete'}
+ </p>
+ )}
+ </div>
  <div className="flex items-center gap-1 bg-zinc-100 rounded-full px-3 py-1.5">
  <Flame className="w-4 h-4 text-orange-500" />
  <span className="font-bold text-sm text-zinc-700">7</span>
@@ -249,7 +445,7 @@ export default function MobileApp() {
  ))}
  </div>
 
- {/* Hero AuraScore Card */}
+ {/* Hero FORMAX Card */}
  <div className="mx-6 mt-2 bg-white rounded-[2rem] p-6 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-zinc-100">
  <div className="flex items-center justify-between">
  <div>
@@ -258,11 +454,11 @@ export default function MobileApp() {
  animate={{ opacity: 1, y: 0 }}
  className="text-6xl font-black text-zinc-900 leading-none"
  >
- {auraScore}
+ {formaxScore}
  </motion.span>
- <p className="text-zinc-500 font-semibold mt-1">AuraScore</p>
+ <p className="text-zinc-500 font-semibold mt-1">FORMAX Score</p>
  </div>
- <Ring score={auraScore} size={72} stroke={6} />
+ <Ring score={formaxScore} size={72} stroke={6} />
  </div>
  </div>
 
@@ -305,156 +501,54 @@ export default function MobileApp() {
 
  // --- Shared Bottom Nav ---
  const renderBottomNav = () => (
- <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-xl border-t border-zinc-100 px-4 pb-6 pt-2 flex items-center">
+ <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-center px-4 pb-4">
+ <div className="flex items-center w-full max-w-md bg-white rounded-[2rem] px-3 py-2 shadow-[0_4px_24px_rgba(0,0,0,0.10),0_1.5px_6px_rgba(0,0,0,0.06)]">
  <div className="flex-1 flex justify-around">
  {([
  { icon: Home, label: 'Home' as const },
  { icon: BarChart3, label: 'Progress' as const },
- { icon: Users, label: 'Community' as const },
+ { icon: Users, label: 'Groups' as const },
  { icon: User, label: 'Profile' as const },
  ] as const).map((item) => (
- <button key={item.label} className="flex flex-col items-center gap-0.5"
- onClick={() => { setActiveTab(item.label); setView('HOME'); }}
+ <button key={item.label} className="flex flex-col items-center gap-0.5 py-1 px-2 relative"
+ onClick={() => { setActiveTab(item.label === 'Groups' ? 'Community' : item.label); setView('HOME'); }}
  >
- <item.icon className={`w-6 h-6 ${activeTab === item.label ? 'text-zinc-900' : 'text-zinc-400'}`} />
- <span className={`text-[10px] font-semibold ${activeTab === item.label ? 'text-zinc-900' : 'text-zinc-400'}`}>{item.label}</span>
+ {activeTab === (item.label === 'Groups' ? 'Community' : item.label) ? (
+ <div className="w-8 h-8 rounded-full bg-cyan-400/80 flex items-center justify-center">
+ <item.icon className="w-[18px] h-[18px] text-white" />
+ </div>
+ ) : (
+ <item.icon className="w-6 h-6 text-zinc-400" />
+ )}
+ <span className={`text-[10px] font-semibold ${activeTab === (item.label === 'Groups' ? 'Community' : item.label) ? 'text-zinc-900' : 'text-zinc-400'}`}>{item.label}</span>
  </button>
  ))}
  </div>
  <button
  onClick={() => setView('CAMERA')}
- className="w-14 h-14 rounded-full bg-zinc-900 flex items-center justify-center shadow-lg -mt-4 ml-2"
+ className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center shadow-[0_4px_16px_rgba(0,0,0,0.25)] ml-1 shrink-0"
  >
- <Plus className="w-7 h-7 text-white" />
+ <Plus className="w-6 h-6 text-white" />
  </button>
+ </div>
  </div>
  );
 
  // --- Progress Page ---
- const renderProgress = () => {
- const streakDays = ['S','M','T','W','T','F','S'];
- const filledDays = [true, true, false, true, true, false, false];
- const timeRanges = ['90 Days', '6 Months', '1 Year', 'All time'];
- const chartData = [65, 68, 72, 70, 75, 80, 87];
- const chartLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
- return (
- <motion.div key="progress" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
- className="absolute inset-0 z-20 bg-[#fafafa] flex flex-col overflow-y-auto pb-28"
- >
- <div className="px-6 pt-14 pb-4">
- <h1 className="text-3xl font-black tracking-tight text-zinc-900">Progress</h1>
- </div>
-
- {/* Top Cards */}
- <div className="px-6 flex gap-3 mb-4">
- <div className="flex-1 bg-white rounded-3xl p-5 shadow-sm border border-zinc-100">
- <p className="text-zinc-500 text-xs font-semibold mb-1">My AuraScore</p>
- <span className="text-3xl font-black text-zinc-900">87</span>
- <div className="mt-2 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
- <div className="h-full bg-emerald-500 rounded-full" style={{ width: '87%' }} />
- </div>
- <p className="text-zinc-400 text-xs mt-2">Goal <b className="text-zinc-700">95</b></p>
- </div>
- <div className="flex-1 bg-white rounded-3xl p-5 shadow-sm border border-zinc-100 flex flex-col items-center">
- <div className="text-4xl mb-1">🔥</div>
- <span className="text-2xl font-black text-orange-500">4</span>
- <p className="text-zinc-500 text-xs font-semibold">Day streak</p>
- <div className="flex gap-1.5 mt-3">
- {streakDays.map((d, i) => (
- <div key={i} className="flex flex-col items-center gap-1">
- <span className="text-[9px] text-zinc-400 font-semibold">{d}</span>
- <div className={`w-4 h-4 rounded-full ${filledDays[i] ? 'bg-orange-400' : 'bg-zinc-200'}`} />
- </div>
- ))}
- </div>
- </div>
- </div>
-
- {/* Time Range Selector */}
- <div className="px-6 flex gap-2 mb-4">
- {timeRanges.map(r => (
- <button key={r} onClick={() => setSelectedRange(r)}
- className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${selectedRange === r ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-500'}`}
- >{r}</button>
- ))}
- </div>
-
- {/* AuraScore Trend Chart */}
- <div className="mx-6 bg-white rounded-3xl p-5 shadow-sm border border-zinc-100 mb-4">
- <div className="flex items-center justify-between mb-4">
- <h2 className="font-bold text-lg text-zinc-900">AuraScore Trend</h2>
- <div className="flex items-center gap-1 bg-emerald-50 rounded-full px-2 py-1">
- <TrendingUp className="w-3 h-3 text-emerald-600" />
- <span className="text-[10px] font-bold text-emerald-600">+12%</span>
- </div>
- </div>
- {/* Simple SVG Chart */}
- <svg viewBox="0 0 300 120" className="w-full h-28">
- <defs>
- <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
- <stop offset="0%" stopColor="#059669" stopOpacity="0.15" />
- <stop offset="100%" stopColor="#059669" stopOpacity="0" />
- </linearGradient>
- </defs>
- {/* Grid lines */}
- {[0,30,60,90].map(y => (
- <line key={y} x1="30" y1={y+10} x2="290" y2={y+10} stroke="#f4f4f5" strokeDasharray="4 4" />
- ))}
- {/* Area */}
- <path d={`M30,${110 - chartData[0]} ${chartData.map((v,i) => `L${30 + i*43},${110-v}`).join(' ')} L${30 + 6*43},110 L30,110 Z`}
- fill="url(#chartGrad)" />
- {/* Line */}
- <polyline fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
- points={chartData.map((v,i) => `${30+i*43},${110-v}`).join(' ')} />
- {/* Dots */}
- {chartData.map((v,i) => (
- <circle key={i} cx={30+i*43} cy={110-v} r="4" fill="white" stroke="#059669" strokeWidth="2" />
- ))}
- {/* Labels */}
- {chartLabels.map((l,i) => (
- <text key={i} x={30+i*43} y="108" textAnchor="middle" className="text-[8px] fill-zinc-400 font-semibold">{l}</text>
- ))}
- </svg>
- </div>
-
- {/* Joint Health Breakdown */}
- <div className="mx-6 bg-white rounded-3xl p-5 shadow-sm border border-zinc-100 mb-4">
- <h2 className="font-bold text-lg text-zinc-900 mb-4">Joint Health Breakdown</h2>
- {jointData.map((joint) => {
- const c = scoreColor(joint.score);
- return (
- <div key={joint.name} className="flex items-center gap-4 mb-4 last:mb-0">
- <Ring score={joint.score} size={36} stroke={3.5} />
- <div className="flex-1">
- <div className="flex items-center justify-between">
- <span className="font-semibold text-zinc-800">{joint.name}</span>
- <span className={`font-bold ${c.text}`}>{joint.score}/100</span>
- </div>
- <div className="mt-1.5 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
- <motion.div initial={{ width: 0 }} animate={{ width: `${joint.score}%` }}
- transition={{ duration: 1 }}
- className="h-full rounded-full"
- style={{ backgroundColor: c.ring }}
+ const renderProgress = () => (
+ <>
+ <ProgressSection
+ weightGoal={null}
+ weightUnit={userProfile?.weight_unit ?? 'kg'}
+ currentWeight={userProfile?.body_weight ?? null}
+ focusAreas={userProfile?.focus_areas ?? null}
+ weaknesses={userProfile?.weaknesses ?? null}
+ injuries={userProfile?.injuries ?? null}
+ experience={userProfile?.experience ?? null}
  />
- </div>
- </div>
- </div>
- );
- })}
- </div>
-
- {/* Motivational Banner */}
- <div className="mx-6 bg-emerald-50 border border-emerald-100 rounded-2xl px-5 py-3 mb-4">
- <p className="text-emerald-700 text-sm font-semibold text-center">
- 🏋️ Getting started is the hardest part. You&apos;re ready for this!
- </p>
- </div>
-
  {renderBottomNav()}
- </motion.div>
+ </>
  );
- };
 
  // --- Community Page ---
  const renderCommunity = () => (
@@ -520,7 +614,7 @@ export default function MobileApp() {
  <UserPlus className="w-8 h-8 text-white shrink-0" />
  <div>
  <h3 className="font-bold text-white">Invite Gym Bros</h3>
- <p className="text-zinc-400 text-xs">Challenge friends to beat your AuraScore</p>
+ <p className="text-zinc-400 text-xs">Challenge friends to beat your FORMAX score</p>
  </div>
  </div>
 
@@ -547,69 +641,174 @@ export default function MobileApp() {
  );
 
  // --- Profile Page ---
+ const { signOut } = useClerk();
  const renderProfile = () => (
  <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
  className="absolute inset-0 z-20 bg-[#fafafa] flex flex-col overflow-y-auto pb-28"
  >
+ {/* Header */}
+ <div className="px-6 pt-14 pb-2">
+ <h1 className="text-3xl font-black tracking-tight text-zinc-900">Profile</h1>
+ </div>
+
  {/* User Card */}
- <div className="mx-6 mt-14 bg-white rounded-3xl p-5 shadow-sm border border-zinc-100 flex items-center gap-4 mb-4">
- <div className="w-14 h-14 rounded-full bg-zinc-200 flex items-center justify-center shrink-0 overflow-hidden">
+ <div className="mx-6 bg-white rounded-3xl p-5 shadow-sm border border-zinc-100 flex items-center gap-4 mb-6">
+ <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center shrink-0 overflow-hidden border-2 border-zinc-200">
  {isSignedIn ? (
- <UserButton appearance={{ elements: { avatarBox: 'w-14 h-14' } }} />
+ <UserButton appearance={{ elements: { avatarBox: 'w-16 h-16' } }} />
  ) : (
- <User className="w-7 h-7 text-zinc-500" />
+ <User className="w-8 h-8 text-zinc-400" />
  )}
  </div>
  <div className="flex-1 min-w-0">
+ <div className="flex items-center gap-2">
  <h2 className="font-bold text-lg text-zinc-900 truncate">
- {isSignedIn ? (user.fullName || user.firstName || user.username || 'Athlete') : 'Guest'}
+ {isSignedIn
+  ? (userProfile?.first_name
+   ? `${userProfile.first_name}${userProfile.last_name ? ' ' + userProfile.last_name : ''}`
+   : (user?.fullName || user?.firstName || 'Enter your name'))
+  : 'Enter your name'}
  </h2>
- <p className="text-zinc-500 text-sm truncate">
- {isSignedIn ? (user.primaryEmailAddress?.emailAddress ?? 'AuraFit Member') : 'AuraFit Member'}
+ <Edit className="w-3.5 h-3.5 text-zinc-400 shrink-0 cursor-pointer" onClick={() => setProfileModal('personal')} />
+ </div>
+ <p className="text-zinc-400 text-sm">
+ {isSignedIn ? (userProfile?.email || user?.primaryEmailAddress?.emailAddress || 'FORMAX Member') : 'FORMAX Member'}
  </p>
  </div>
  {!isSignedIn && (
  <SignInButton>
- <button className="px-3 py-1.5 rounded-full bg-zinc-900 text-white text-xs font-semibold shrink-0">
+ <button className="px-4 py-2 rounded-full bg-zinc-900 text-white text-xs font-bold shrink-0">
  Sign In
  </button>
  </SignInButton>
  )}
  </div>
 
- {/* Invite Banner */}
- <div className="mx-6 mb-4">
- <p className="text-zinc-500 text-xs font-semibold flex items-center gap-2 mb-2">
- <UserPlus className="w-4 h-4" /> Invite friends
- </p>
- <div className="relative rounded-3xl overflow-hidden h-36">
- <img src="/assets/invite_banner.png" alt="Invite friends" className="w-full h-full object-cover" />
- <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent flex flex-col justify-end p-5">
- <p className="text-white font-bold text-lg leading-tight mb-2">The journey<br/>is easier together.</p>
- <button className="bg-white text-zinc-900 font-bold text-sm px-4 py-2 rounded-full w-fit">
- Refer a friend to earn rewards
- </button>
+ {/* Athlete Stats */}
+ {userProfile && (userProfile.body_weight || userProfile.experience || userProfile.primary_goal) && (
+ <div className="mx-6 mb-6">
+ <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide mb-2.5">Athlete Stats</p>
+ <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 flex divide-x divide-zinc-100 overflow-hidden">
+ {userProfile.body_weight && (
+ <div className="flex-1 p-4 flex flex-col items-center">
+ <span className="text-2xl font-black text-zinc-900">
+ {userProfile.body_weight}
+ <span className="text-sm font-semibold text-zinc-400 ml-0.5">{userProfile.weight_unit ?? 'kg'}</span>
+ </span>
+ <span className="text-zinc-400 text-xs font-semibold mt-0.5">Body Weight</span>
  </div>
+ )}
+ {userProfile.experience && (
+ <div className="flex-1 p-4 flex flex-col items-center">
+ <span className="text-lg font-black text-zinc-900 leading-tight text-center">{userProfile.experience}</span>
+ <span className="text-zinc-400 text-xs font-semibold mt-0.5">Level</span>
+ </div>
+ )}
+ {userProfile.primary_goal && (
+ <div className="flex-1 p-4 flex flex-col items-center">
+ <span className="text-sm font-black text-zinc-900 leading-tight text-center">{userProfile.primary_goal}</span>
+ <span className="text-zinc-400 text-xs font-semibold mt-0.5">Goal</span>
+ </div>
+ )}
+ </div>
+ </div>
+ )}
+
+ {/* Invite Friends */}
+ <div className="mx-6 mb-6" onClick={handleInviteFriends}>
+ <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide mb-2.5">Invite friends</p>
+ <div className="bg-white rounded-3xl p-5 shadow-sm border border-zinc-100 flex items-start gap-4 cursor-pointer active:bg-zinc-50 transition-colors">
+ <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center shrink-0">
+ <UserPlus className="w-5 h-5 text-zinc-500" />
+ </div>
+ <div className="flex-1 min-w-0">
+ <p className="font-bold text-zinc-900 text-[15px] mb-0.5">Refer a friend & earn rewards</p>
+ <p className="text-zinc-400 text-xs leading-relaxed">Get 1 free month for every friend that signs up with your invite link.</p>
+ </div>
+ <ChevronRight className="w-5 h-5 text-zinc-300 shrink-0 mt-1" />
  </div>
  </div>
 
- {/* Settings List */}
- <div className="mx-6 bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden mb-4">
+ {/* Account Section */}
+ <div className="mx-6 mb-6">
+ <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide mb-2.5">Account</p>
+ <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden">
  {[
- { icon: User, label: 'Personal details' },
- { icon: Target, label: 'Adjust form goals' },
- { icon: Activity, label: 'Joint health targets' },
- { icon: History, label: 'Session history' },
- { icon: Globe, label: 'Language' },
- { icon: Palette, label: 'Ring Colors Explained' },
- ].map((item, i) => (
- <button key={item.label} className="w-full px-5 py-4 flex items-center gap-4 border-b border-zinc-50 last:border-0 active:bg-zinc-50 transition-colors">
+ { icon: User, label: 'Personal details', modal: 'personal' as const },
+ { icon: Settings, label: 'Preferences', modal: 'preferences' as const },
+ { icon: Globe, label: 'Language', modal: 'language' as const },
+ ].map((item) => (
+ <button key={item.label} onClick={() => setProfileModal(item.modal)} className="w-full px-5 py-4 flex items-center gap-4 border-b border-zinc-100/60 last:border-0 active:bg-zinc-50 transition-colors">
  <item.icon className="w-5 h-5 text-zinc-500" />
- <span className="font-semibold text-zinc-800 flex-1 text-left">{item.label}</span>
+ <span className="font-semibold text-zinc-800 flex-1 text-left text-[15px]">{item.label}</span>
  <ChevronRight className="w-5 h-5 text-zinc-300" />
  </button>
  ))}
  </div>
+ </div>
+
+ {/* Goals & Tracking Section */}
+ <div className="mx-6 mb-6">
+ <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide mb-2.5">Goals & Tracking</p>
+ <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden">
+ {[
+ { icon: Target, label: 'Form score targets', modal: 'targets' as const },
+ { icon: Crosshair, label: 'Focus areas & weaknesses', modal: 'focus' as const },
+ { icon: Activity, label: 'Joint health thresholds', modal: 'joints' as const },
+ { icon: Dumbbell, label: 'Exercise library', modal: 'exercises' as const },
+ { icon: Eye, label: 'Session replay settings', modal: 'replay' as const },
+ { icon: History, label: 'Session history', modal: 'history' as const },
+ ].map((item) => (
+ <button key={item.label} onClick={() => { if (item.modal === 'history') { setSessionsLoaded(false); } setProfileModal(item.modal); }} className="w-full px-5 py-4 flex items-center gap-4 border-b border-zinc-100/60 last:border-0 active:bg-zinc-50 transition-colors">
+ <item.icon className="w-5 h-5 text-zinc-500" />
+ <span className="font-semibold text-zinc-800 flex-1 text-left text-[15px]">{item.label}</span>
+ <ChevronRight className="w-5 h-5 text-zinc-300" />
+ </button>
+ ))}
+ </div>
+ </div>
+
+ {/* Support & Legal */}
+ <div className="mx-6 mb-6">
+ <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide mb-2.5">Support & Legal</p>
+ <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden">
+ {[
+ { icon: MessageSquare, label: 'Request a Feature', action: () => { setFeedbackType('feature_request'); setView('FEEDBACK'); } },
+ { icon: Mail, label: 'Support', action: () => { setFeedbackType('support'); setView('FEEDBACK'); } },
+ { icon: FileText, label: 'Terms and Conditions', action: undefined },
+ { icon: ShieldCheck, label: 'Privacy Policy', action: undefined },
+ ].map((item) => (
+ <button key={item.label} onClick={item.action} className="w-full px-5 py-4 flex items-center gap-4 border-b border-zinc-100/60 last:border-0 active:bg-zinc-50 transition-colors">
+ <item.icon className="w-5 h-5 text-zinc-500" />
+ <span className="font-semibold text-zinc-800 flex-1 text-left text-[15px]">{item.label}</span>
+ <ChevronRight className="w-5 h-5 text-zinc-300" />
+ </button>
+ ))}
+ </div>
+ </div>
+
+ {/* Account Actions */}
+ <div className="mx-6 mb-6">
+ <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide mb-2.5">Account Actions</p>
+ <div className="bg-white rounded-3xl shadow-sm border border-zinc-100 overflow-hidden">
+ <button
+ onClick={() => { if (isSignedIn) signOut(); }}
+ className="w-full px-5 py-4 flex items-center gap-4 border-b border-zinc-100/60 active:bg-zinc-50 transition-colors"
+ >
+ <LogOut className="w-5 h-5 text-zinc-500" />
+ <span className="font-semibold text-zinc-800 flex-1 text-left text-[15px]">Logout</span>
+ </button>
+ <button onClick={() => setProfileModal('deleteConfirm')} className="w-full px-5 py-4 flex items-center gap-4 active:bg-red-50 transition-colors">
+ <Trash2 className="w-5 h-5 text-red-400" />
+ <span className="font-semibold text-red-500 flex-1 text-left text-[15px]">Delete Account</span>
+ </button>
+ </div>
+ </div>
+
+ {/* Version */}
+ <p className="text-center text-zinc-300 text-xs font-semibold tracking-wider uppercase mb-6">
+ VERSION 1.0.0
+ </p>
 
  {renderBottomNav()}
  </motion.div>
@@ -1055,15 +1254,41 @@ export default function MobileApp() {
  </div>
  )}
 
+ {/* Share Score Card */}
+ {result && (
+  <button
+   onClick={handleShareScore}
+   disabled={shareLoading}
+   style={{ touchAction: 'manipulation' }}
+   className="w-full mt-4 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-lg active:scale-95 transition-transform flex items-center justify-center gap-3 disabled:opacity-60"
+  >
+   <Share2 className="w-5 h-5" />
+   {shareLoading ? 'Preparing share card…' : 'Share Your Score'}
+  </button>
+ )}
+ {sessionId && !postedToCommunity && (
+  <button
+   onClick={handlePostToCommunity}
+   style={{ touchAction: 'manipulation' }}
+   className="w-full mt-2 py-3 rounded-2xl bg-zinc-100 text-zinc-700 font-bold text-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
+  >
+   <Users className="w-4 h-4" /> Post to Community
+  </button>
+ )}
+ {postedToCommunity && (
+  <div className="w-full mt-2 py-3 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold text-sm flex items-center justify-center gap-2">
+   <CheckCircle2 className="w-4 h-4" /> Posted to Community!
+  </div>
+ )}
  <button
- className="w-full mt-2 py-4 rounded-2xl bg-black text-white font-bold text-lg active:scale-95 transition-transform"
- onClick={() => setView('CAMERA')}
+ className="w-full mt-4 py-4 rounded-2xl bg-black text-white font-bold text-lg active:scale-95 transition-transform"
+ onClick={() => { setView('CAMERA'); setPostedToCommunity(false); }}
  >
  Record Again
  </button>
  <button
  className="w-full mt-2 py-3 rounded-2xl bg-zinc-100 text-zinc-600 font-bold text-sm active:scale-95 transition-transform"
- onClick={() => setView('HOME')}
+ onClick={() => { setView('HOME'); setPostedToCommunity(false); }}
  >
  Back to Home
  </button>
@@ -1074,17 +1299,773 @@ export default function MobileApp() {
  );
  };
 
+ // ── Profile helper: save partial update ───────────────────────────────────
+
+ const patchProfile = async (fields: Record<string, unknown>) => {
+  setProfileSaving(true);
+  try {
+   const res = await fetch('/api/user/profile/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+   });
+   if (!res.ok) throw new Error('Save failed');
+   // Refresh profile
+   const r = await fetch('/api/user/profile');
+   if (r.ok) {
+    const d = await r.json();
+    if (d?.profile) setUserProfile(d.profile);
+   }
+   setProfileToast('Saved');
+   setTimeout(() => setProfileToast(null), 2000);
+   return true;
+  } catch {
+   setProfileToast('Failed to save');
+   setTimeout(() => setProfileToast(null), 2500);
+   return false;
+  } finally {
+   setProfileSaving(false);
+  }
+ };
+
+ // ── Invite handler ────────────────────────────────────────────────────────
+
+ const handleInviteFriends = async () => {
+  const url = typeof window !== 'undefined' ? window.location.origin : 'https://formax.app';
+  const text = `Check out FORMAX — your AI form coach! 💪 ${url}`;
+  try {
+   if (typeof navigator !== 'undefined' && navigator.share) {
+    await navigator.share({ title: 'FORMAX', text, url });
+   } else {
+    await navigator.clipboard.writeText(text);
+    setProfileToast('Link copied!');
+    setTimeout(() => setProfileToast(null), 2000);
+   }
+  } catch (e) {
+   if (e instanceof Error && e.name !== 'AbortError') {
+    await navigator.clipboard.writeText(text);
+    setProfileToast('Link copied!');
+    setTimeout(() => setProfileToast(null), 2000);
+   }
+  }
+ };
+
+ // ── Delete account handler ────────────────────────────────────────────────
+
+ const handleDeleteAccount = async () => {
+  setDeleteLoading(true);
+  try {
+   await fetch('/api/user/profile', { method: 'DELETE' });
+   signOut();
+  } catch {
+   setProfileToast('Delete failed');
+   setTimeout(() => setProfileToast(null), 2500);
+  } finally {
+   setDeleteLoading(false);
+   setProfileModal(null);
+  }
+ };
+
+ // ── Load sessions for history ─────────────────────────────────────────────
+
+ useEffect(() => {
+  if (profileModal !== 'history' || sessionsLoaded) return;
+  fetch('/api/sessions')
+   .then(r => r.ok ? r.json() : null)
+   .then(d => { if (d?.sessions) setSessions(d.sessions); setSessionsLoaded(true); })
+   .catch(console.error);
+ }, [profileModal, sessionsLoaded]);
+
+ // ── Exercise library data ─────────────────────────────────────────────────
+
+ const EXERCISE_LIBRARY = [
+  { key: 'deadlift', label: 'Deadlift', emoji: '🏋️', checkpoints: ['Setup & Stance', 'Hip Hinge Pattern', 'Bar Path', 'Spine Position', 'Lockout', 'Eccentric Control'] },
+  { key: 'squat', label: 'Squat', emoji: '🦵', checkpoints: ['Stance & Setup', 'Descent Control', 'Depth & Bottom Position', 'Drive Pattern', 'Knee Tracking', 'Lockout'] },
+  { key: 'bench_press', label: 'Bench Press', emoji: '💪', checkpoints: ['Setup & Arch', 'Unrack & Start', 'Bar Path', 'Touch Point', 'Press Drive', 'Shoulder Safety'] },
+  { key: 'generic', label: 'Other / Generic', emoji: '🔄', checkpoints: ['Movement quality assessed dynamically based on detected exercise'] },
+ ];
+
+ // ── Modal shell ───────────────────────────────────────────────────────────
+
+ // ── Toggle component ──────────────────────────────────────────────────────
+
+ const Toggle = ({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) => (
+  <div className="flex items-center justify-between py-3">
+   <span className="font-semibold text-zinc-800 text-[15px]">{label}</span>
+   <button
+    onClick={() => onChange(!value)}
+    className={`w-12 h-7 rounded-full transition-colors relative ${value ? 'bg-emerald-500' : 'bg-zinc-200'}`}
+   >
+    <motion.div
+     animate={{ x: value ? 22 : 2 }}
+     className="absolute top-[3px] w-[22px] h-[22px] rounded-full bg-white shadow-sm"
+    />
+   </button>
+  </div>
+ );
+
+ // ── Chip select component ─────────────────────────────────────────────────
+
+ const ChipSelect = ({ options, selected, onToggle }: { options: string[]; selected: string[]; onToggle: (v: string) => void }) => (
+  <div className="flex flex-wrap gap-2">
+   {options.map(opt => (
+    <button
+     key={opt}
+     onClick={() => onToggle(opt)}
+     className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+      selected.includes(opt)
+       ? 'bg-zinc-900 text-white'
+       : 'bg-zinc-100 text-zinc-600'
+     }`}
+    >
+     {opt}
+    </button>
+   ))}
+  </div>
+ );
+
+ // ── Personal Details Modal ────────────────────────────────────────────────
+
+ const PersonalDetailsModal = () => {
+  const [fn, setFn] = useState(userProfile?.first_name ?? '');
+  const [ln, setLn] = useState(userProfile?.last_name ?? '');
+  const [em, setEm] = useState(userProfile?.email ?? '');
+  const [gn, setGn] = useState(userProfile?.gender ?? '');
+  const [bw, setBw] = useState(String(userProfile?.body_weight ?? ''));
+  const [wu, setWu] = useState(userProfile?.weight_unit ?? 'kg');
+
+  const save = async () => {
+   const ok = await patchProfile({
+    first_name: fn || null,
+    last_name: ln || null,
+    email: em || null,
+    gender: gn || null,
+    body_weight: bw ? parseFloat(bw) : null,
+    weight_unit: wu,
+   });
+   if (ok) setProfileModal(null);
+  };
+
+  return (
+   <ModalShell title="Personal Details" onClose={() => setProfileModal(null)}>
+    <div className="space-y-4">
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">First Name</label>
+      <input value={fn} onChange={e => setFn(e.target.value)} className="w-full mt-1 px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+     </div>
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Last Name</label>
+      <input value={ln} onChange={e => setLn(e.target.value)} className="w-full mt-1 px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+     </div>
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Email</label>
+      <input type="email" value={em} onChange={e => setEm(e.target.value)} className="w-full mt-1 px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+     </div>
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide mb-2 block">Gender</label>
+      <div className="flex gap-2">
+       {['Male', 'Female', 'Other'].map(g => (
+        <button key={g} onClick={() => setGn(g)} className={`flex-1 py-2.5 rounded-2xl text-sm font-bold transition-all ${gn === g ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'}`}>{g}</button>
+       ))}
+      </div>
+     </div>
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Body Weight</label>
+      <div className="flex gap-2 mt-1">
+       <input type="number" value={bw} onChange={e => setBw(e.target.value)} placeholder="0" className="flex-1 px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+       <div className="flex rounded-2xl overflow-hidden border border-zinc-200">
+        {['kg', 'lbs'].map(u => (
+         <button key={u} onClick={() => setWu(u)} className={`px-4 py-3 text-sm font-bold transition-all ${wu === u ? 'bg-zinc-900 text-white' : 'bg-zinc-50 text-zinc-600'}`}>{u}</button>
+        ))}
+       </div>
+      </div>
+     </div>
+     <button onClick={save} disabled={profileSaving} className="w-full mt-2 py-3.5 rounded-2xl bg-zinc-900 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+      {profileSaving ? 'Saving…' : 'Save Changes'}
+     </button>
+    </div>
+   </ModalShell>
+  );
+ };
+
+ // ── Preferences Modal ─────────────────────────────────────────────────────
+
+ const PreferencesModal = () => {
+  const [strict, setStrict] = useState(userProfile?.strictness ?? 'Balanced');
+  const [audio, setAudio] = useState(userProfile?.audio_feedback ?? false);
+  const [notifs, setNotifs] = useState(userProfile?.notifications_allowed ?? false);
+
+  const save = async () => {
+   const ok = await patchProfile({
+    strictness: strict,
+    audio_feedback: audio,
+    notifications_allowed: notifs,
+   });
+   if (ok) setProfileModal(null);
+  };
+
+  return (
+   <ModalShell title="Preferences" onClose={() => setProfileModal(null)}>
+    <div className="space-y-4">
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide mb-2 block">Coaching Strictness</label>
+      <div className="flex gap-2">
+       {['Strict', 'Balanced', 'Hype Man'].map(s => (
+        <button key={s} onClick={() => setStrict(s)} className={`flex-1 py-2.5 rounded-2xl text-sm font-bold transition-all ${strict === s ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'}`}>{s}</button>
+       ))}
+      </div>
+     </div>
+     <Toggle value={audio} onChange={setAudio} label="Audio Feedback" />
+     <Toggle value={notifs} onChange={setNotifs} label="Push Notifications" />
+     <button onClick={save} disabled={profileSaving} className="w-full mt-2 py-3.5 rounded-2xl bg-zinc-900 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+      {profileSaving ? 'Saving…' : 'Save Changes'}
+     </button>
+    </div>
+   </ModalShell>
+  );
+ };
+
+ // ── Language Modal ─────────────────────────────────────────────────────────
+
+ const LanguageModal = () => {
+  const [lang, setLang] = useState(userProfile?.language ?? 'en');
+  const languages = [
+   { code: 'en', label: 'English', flag: '🇬🇧' },
+   { code: 'es', label: 'Español', flag: '🇪🇸' },
+   { code: 'fr', label: 'Français', flag: '🇫🇷' },
+   { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
+   { code: 'ar', label: 'العربية', flag: '🇸🇦' },
+   { code: 'pt', label: 'Português', flag: '🇧🇷' },
+  ];
+
+  const save = async () => {
+   const ok = await patchProfile({ language: lang });
+   if (ok) setProfileModal(null);
+  };
+
+  return (
+   <ModalShell title="Language" onClose={() => setProfileModal(null)}>
+    <div className="space-y-1 mb-4">
+     {languages.map(l => (
+      <button key={l.code} onClick={() => setLang(l.code)}
+       className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${lang === l.code ? 'bg-zinc-900 text-white' : 'bg-zinc-50 text-zinc-800 hover:bg-zinc-100'}`}
+      >
+       <span className="text-xl">{l.flag}</span>
+       <span className="font-semibold flex-1 text-left">{l.label}</span>
+       {lang === l.code && <CheckCircle2 className="w-5 h-5" />}
+      </button>
+     ))}
+    </div>
+    <button onClick={save} disabled={profileSaving} className="w-full py-3.5 rounded-2xl bg-zinc-900 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+     {profileSaving ? 'Saving…' : 'Save'}
+    </button>
+   </ModalShell>
+  );
+ };
+
+ // ── Form Score Targets Modal ──────────────────────────────────────────────
+
+ const ScoreTargetsModal = () => {
+  const defaults = userProfile?.form_score_targets ?? {};
+  const [targets, setTargets] = useState<Record<string, number>>({
+   deadlift: defaults.deadlift ?? 80,
+   squat: defaults.squat ?? 80,
+   bench_press: defaults.bench_press ?? 80,
+   generic: defaults.generic ?? 80,
+  });
+
+  const save = async () => {
+   const ok = await patchProfile({ form_score_targets: targets });
+   if (ok) setProfileModal(null);
+  };
+
+  return (
+   <ModalShell title="Form Score Targets" onClose={() => setProfileModal(null)}>
+    <p className="text-zinc-400 text-sm mb-4">Set your target score for each exercise. You'll be notified when you hit your goals.</p>
+    <div className="space-y-5 mb-6">
+     {EXERCISE_LIBRARY.filter(e => e.key !== 'generic').concat(EXERCISE_LIBRARY.filter(e => e.key === 'generic')).map(ex => (
+      <div key={ex.key}>
+       <div className="flex items-center justify-between mb-1.5">
+        <span className="font-semibold text-zinc-800 text-[15px]">{ex.emoji} {ex.label}</span>
+        <span className="font-bold text-zinc-900 text-lg tabular-nums">{targets[ex.key]}</span>
+       </div>
+       <input
+        type="range" min={0} max={100} value={targets[ex.key]}
+        onChange={e => setTargets(prev => ({ ...prev, [ex.key]: Number(e.target.value) }))}
+        className="w-full h-2 bg-zinc-100 rounded-full appearance-none cursor-pointer accent-zinc-900"
+       />
+       <div className="flex justify-between text-[10px] text-zinc-400 font-semibold mt-0.5">
+        <span>0</span><span>50</span><span>100</span>
+       </div>
+      </div>
+     ))}
+    </div>
+    <button onClick={save} disabled={profileSaving} className="w-full py-3.5 rounded-2xl bg-zinc-900 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+     {profileSaving ? 'Saving…' : 'Save Targets'}
+    </button>
+   </ModalShell>
+  );
+ };
+
+ // ── Focus Areas & Weaknesses Modal ────────────────────────────────────────
+
+ const FocusModal = () => {
+  const [fa, setFa] = useState<string[]>(userProfile?.focus_areas ?? []);
+  const [wk, setWk] = useState<string[]>(userProfile?.weaknesses ?? []);
+  const [inj, setInj] = useState<string[]>(userProfile?.injuries ?? []);
+
+  const toggle = (arr: string[], setArr: (v: string[]) => void, val: string) => {
+   setArr(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val]);
+  };
+
+  const save = async () => {
+   const ok = await patchProfile({ focus_areas: fa, weaknesses: wk, injuries: inj });
+   if (ok) setProfileModal(null);
+  };
+
+  return (
+   <ModalShell title="Focus & Weaknesses" onClose={() => setProfileModal(null)}>
+    <div className="space-y-5 mb-6">
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide mb-2 block">Focus Areas</label>
+      <ChipSelect options={['Squat Depth', 'Deadlift', 'Bench Press', 'Overhead Press']} selected={fa} onToggle={v => toggle(fa, setFa, v)} />
+     </div>
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide mb-2 block">Weaknesses</label>
+      <ChipSelect options={['Butt Wink', 'Knee Cave', 'Lower Back Rounding', 'Bar Path Drift']} selected={wk} onToggle={v => toggle(wk, setWk, v)} />
+     </div>
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide mb-2 block">Injuries</label>
+      <ChipSelect options={['Lower Back', 'Knees', 'Shoulders', 'Hips', 'None']} selected={inj} onToggle={v => {
+       if (v === 'None') { setInj(['None']); } else { setInj(inj.filter(x => x !== 'None').includes(v) ? inj.filter(x => x !== v) : [...inj.filter(x => x !== 'None'), v]); }
+      }} />
+     </div>
+    </div>
+    <button onClick={save} disabled={profileSaving} className="w-full py-3.5 rounded-2xl bg-zinc-900 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+     {profileSaving ? 'Saving…' : 'Save Changes'}
+    </button>
+   </ModalShell>
+  );
+ };
+
+ // ── Joint Health Thresholds Modal ─────────────────────────────────────────
+
+ const JointThresholdsModal = () => {
+  const defaults = userProfile?.joint_thresholds ?? {};
+  const [thresholds, setThresholds] = useState<Record<string, number>>({
+   'Lower Back': defaults['Lower Back'] ?? 50,
+   'Hips': defaults['Hips'] ?? 50,
+   'Knees': defaults['Knees'] ?? 50,
+   'Shoulders': defaults['Shoulders'] ?? 50,
+   'Elbows': defaults['Elbows'] ?? 50,
+  });
+
+  const save = async () => {
+   const ok = await patchProfile({ joint_thresholds: thresholds });
+   if (ok) setProfileModal(null);
+  };
+
+  return (
+   <ModalShell title="Joint Health Thresholds" onClose={() => setProfileModal(null)}>
+    <p className="text-zinc-400 text-sm mb-4">Set alert thresholds for each joint. Scores below these will be flagged in your reports.</p>
+    <div className="space-y-5 mb-6">
+     {Object.entries(thresholds).map(([joint, val]) => (
+      <div key={joint}>
+       <div className="flex items-center justify-between mb-1.5">
+        <span className="font-semibold text-zinc-800 text-[15px]">{joint}</span>
+        <span className={`font-bold text-lg tabular-nums ${val >= 60 ? 'text-emerald-600' : val >= 40 ? 'text-amber-600' : 'text-red-500'}`}>{val}</span>
+       </div>
+       <input
+        type="range" min={0} max={100} value={val}
+        onChange={e => setThresholds(prev => ({ ...prev, [joint]: Number(e.target.value) }))}
+        className="w-full h-2 bg-zinc-100 rounded-full appearance-none cursor-pointer accent-zinc-900"
+       />
+      </div>
+     ))}
+    </div>
+    <button onClick={save} disabled={profileSaving} className="w-full py-3.5 rounded-2xl bg-zinc-900 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+     {profileSaving ? 'Saving…' : 'Save Thresholds'}
+    </button>
+   </ModalShell>
+  );
+ };
+
+ // ── Exercise Library Modal ────────────────────────────────────────────────
+
+ const ExerciseLibraryModal = () => (
+  <ModalShell title="Exercise Library" onClose={() => setProfileModal(null)}>
+   <div className="space-y-3">
+    {EXERCISE_LIBRARY.map(ex => (
+     <div key={ex.key} className="bg-zinc-50 rounded-2xl p-4 border border-zinc-100">
+      <div className="flex items-center gap-3 mb-2">
+       <span className="text-2xl">{ex.emoji}</span>
+       <div>
+        <h3 className="font-bold text-zinc-900">{ex.label}</h3>
+        <p className="text-zinc-400 text-xs">{ex.checkpoints.length} checkpoint{ex.checkpoints.length !== 1 ? 's' : ''}</p>
+       </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+       {ex.checkpoints.map(cp => (
+        <span key={cp} className="text-xs bg-white border border-zinc-200 rounded-full px-2.5 py-1 text-zinc-600 font-medium">{cp}</span>
+       ))}
+      </div>
+     </div>
+    ))}
+   </div>
+  </ModalShell>
+ );
+
+ // ── Session Replay Settings Modal ─────────────────────────────────────────
+
+ const ReplaySettingsModal = () => {
+  const [autoplay, setAutoplay] = useState(userProfile?.session_replay_autoplay ?? true);
+  const [quality, setQuality] = useState(userProfile?.session_replay_quality ?? 'auto');
+
+  const save = async () => {
+   const ok = await patchProfile({ session_replay_autoplay: autoplay, session_replay_quality: quality });
+   if (ok) setProfileModal(null);
+  };
+
+  return (
+   <ModalShell title="Session Replay" onClose={() => setProfileModal(null)}>
+    <div className="space-y-4 mb-6">
+     <Toggle value={autoplay} onChange={setAutoplay} label="Autoplay Replays" />
+     <div>
+      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide mb-2 block">Video Quality</label>
+      <div className="flex gap-2">
+       {['auto', 'low', 'high'].map(q => (
+        <button key={q} onClick={() => setQuality(q)} className={`flex-1 py-2.5 rounded-2xl text-sm font-bold capitalize transition-all ${quality === q ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'}`}>{q}</button>
+       ))}
+      </div>
+     </div>
+    </div>
+    <button onClick={save} disabled={profileSaving} className="w-full py-3.5 rounded-2xl bg-zinc-900 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+     {profileSaving ? 'Saving…' : 'Save'}
+    </button>
+   </ModalShell>
+  );
+ };
+
+ // ── Session History Modal ─────────────────────────────────────────────────
+
+ const exerciseEmoji: Record<string, string> = { deadlift: '🏋️', squat: '🦵', bench_press: '💪', generic: '🔄' };
+
+ const SessionHistoryModal = () => {
+  // Detail view of a single session
+  if (selectedSession) {
+   const s = selectedSession;
+   const fs = s.overall_score ?? 0;
+   const sc2 = scoreColor(fs);
+   const cps: Array<{ name: string; score: number; feedback: string; observed_details?: string }> = s.checkpoints ?? [];
+   const bff: string[] = s.bad_form_flags ?? [];
+   const ir = s.injury_risk ?? 'unknown';
+   const ib2 = ir === 'low'
+    ? { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', label: 'Low Risk' }
+    : ir === 'moderate'
+    ? { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', label: 'Moderate Risk' }
+    : { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', label: 'High Risk' };
+
+   return (
+    <motion.div
+     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+     className="fixed inset-0 z-[60] bg-[#fafafa] flex flex-col pt-14 pb-8 px-6 overflow-y-auto"
+    >
+     <header className="flex items-center gap-3 mb-5">
+      <button onClick={() => setSelectedSession(null)} className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center">
+       <ChevronRight className="w-5 h-5 text-zinc-500 rotate-180" />
+      </button>
+      <div className="flex-1">
+       <h2 className="font-bold text-lg text-zinc-900">{exerciseEmoji[s.exercise] ?? '🔄'} {s.exercise?.replace(/_/g, ' ')}</h2>
+       <p className="text-zinc-400 text-xs">{new Date(s.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+      </div>
+      <button onClick={() => { setSelectedSession(null); setProfileModal(null); }} className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center">
+       <X className="w-5 h-5 text-zinc-600" />
+      </button>
+     </header>
+
+     {/* Score card */}
+     <div className="flex flex-col items-center mb-5 bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-100">
+      <div className="relative mb-3">
+       <Ring score={fs} size={100} stroke={8} />
+       <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-3xl font-black text-zinc-800">{fs}</span>
+       </div>
+      </div>
+      <span className="font-semibold text-zinc-400 text-xs tracking-widest uppercase mb-3">Overall Score</span>
+      <div className={`${ib2.bg} ${ib2.border} border rounded-full px-4 py-1.5`}>
+       <span className={`text-xs font-bold ${ib2.text}`}><Shield className="w-3 h-3 inline mr-1" />{ib2.label}</span>
+      </div>
+     </div>
+
+     {/* Bad form flags */}
+     {bff.length > 0 && (
+      <div className="mb-4">
+       <h3 className="font-bold text-lg ml-1 mb-2 flex items-center gap-2"><span className="text-red-500">⛔</span> Form Issues</h3>
+       <div className="space-y-2">
+        {bff.map((f, i) => (
+         <div key={i} className="bg-red-50 border border-red-100 rounded-2xl p-4">
+          <p className="text-red-700 text-sm font-medium">{f}</p>
+         </div>
+        ))}
+       </div>
+      </div>
+     )}
+
+     {/* Checkpoints */}
+     {cps.length > 0 && (
+      <div className="mb-4">
+       <h3 className="font-bold text-lg ml-1 mb-3">Checkpoints</h3>
+       <div className="space-y-2">
+        {cps.map((cp, i) => {
+         const cpC = scoreColor(cp.score);
+         return (
+          <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-zinc-100">
+           <div className="flex items-center justify-between mb-1">
+            <span className="font-semibold text-zinc-800 text-sm">{cp.name}</span>
+            <span className={`font-bold text-sm ${cpC.text}`}>{cp.score}/100</span>
+           </div>
+           <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden mb-2">
+            <motion.div initial={{ width: 0 }} animate={{ width: `${cp.score}%` }} transition={{ duration: 0.8, delay: i * 0.1 }} className="h-full rounded-full" style={{ backgroundColor: cpC.ring }} />
+           </div>
+           <p className="text-zinc-500 text-xs leading-relaxed">{cp.feedback}</p>
+           {cp.observed_details && <p className="text-zinc-400 text-xs mt-1 italic">{cp.observed_details}</p>}
+          </div>
+         );
+        })}
+       </div>
+      </div>
+     )}
+
+     {/* Top priority & positive */}
+     {(s.top_priority || s.positive) && (
+      <div className="mb-4 space-y-3">
+       <h3 className="font-bold text-lg ml-1">Summary</h3>
+       {s.positive && (
+        <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+         <span className="text-emerald-700 font-bold text-xs uppercase tracking-wide block mb-1">What You Did Well</span>
+         <p className="text-emerald-800 text-sm font-medium leading-relaxed">{s.positive}</p>
+        </div>
+       )}
+       {s.top_priority && (
+        <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+         <span className="text-amber-700 font-bold text-xs uppercase tracking-wide block mb-1">Top Priority Fix</span>
+         <p className="text-amber-800 text-sm font-medium leading-relaxed">{s.top_priority}</p>
+        </div>
+       )}
+      </div>
+     )}
+
+     {s.consistency_summary && (
+      <div className="bg-zinc-50 rounded-2xl p-4 border border-zinc-100 mb-4">
+       <span className="text-zinc-500 font-bold text-xs uppercase tracking-wide block mb-1">Consistency</span>
+       <p className="text-zinc-700 text-sm">{s.consistency_summary}</p>
+      </div>
+     )}
+    </motion.div>
+   );
+  }
+
+  // List view
+  return (
+   <motion.div
+    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    className="fixed inset-0 z-[60] bg-[#fafafa] flex flex-col pt-14 pb-8 px-6 overflow-y-auto"
+   >
+    <header className="flex items-center justify-between mb-5">
+     <h2 className="font-bold text-xl text-zinc-900">Session History</h2>
+     <button onClick={() => setProfileModal(null)} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center">
+      <X className="w-4 h-4 text-zinc-500" />
+     </button>
+    </header>
+    {!sessionsLoaded ? (
+     <div className="flex-1 flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-zinc-300 border-t-zinc-800 rounded-full animate-spin" />
+     </div>
+    ) : sessions.length === 0 ? (
+     <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+      <History className="w-12 h-12 text-zinc-300 mb-3" />
+      <p className="text-zinc-400 font-medium">No sessions yet</p>
+      <p className="text-zinc-300 text-sm mt-1">Record your first workout to see it here</p>
+     </div>
+    ) : (
+     <div className="space-y-2">
+      {sessions.map(s => {
+       const sc2 = scoreColor(s.overall_score ?? 0);
+       return (
+        <button
+         key={s.id}
+         onClick={async () => {
+          try {
+           const r = await fetch(`/api/sessions/${s.id}`);
+           if (r.ok) { const d = await r.json(); setSelectedSession(d.session); }
+          } catch { /* ignore */ }
+         }}
+         className="w-full bg-white rounded-2xl p-4 shadow-sm border border-zinc-100 flex items-center gap-3 active:bg-zinc-50 transition-colors text-left"
+        >
+         <div className="w-11 h-11 rounded-xl bg-zinc-100 flex items-center justify-center text-xl shrink-0">
+          {exerciseEmoji[s.exercise] ?? '🔄'}
+         </div>
+         <div className="flex-1 min-w-0">
+          <p className="font-semibold text-zinc-800 text-sm capitalize truncate">{s.exercise?.replace(/_/g, ' ')}</p>
+          <p className="text-zinc-400 text-xs">{new Date(s.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+         </div>
+         <div className="flex items-center gap-2 shrink-0">
+          <Ring score={s.overall_score ?? 0} size={36} stroke={3} />
+          <span className={`font-bold text-sm ${sc2.text}`}>{s.overall_score ?? '—'}</span>
+         </div>
+         <ChevronRight className="w-4 h-4 text-zinc-300 shrink-0" />
+        </button>
+       );
+      })}
+     </div>
+    )}
+   </motion.div>
+  );
+ };
+
+ // ── Delete Confirmation Modal ─────────────────────────────────────────────
+
+ const DeleteConfirmModal = () => (
+  <ModalShell title="Delete Account" onClose={() => setProfileModal(null)}>
+   <div className="text-center">
+    <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+     <Trash2 className="w-8 h-8 text-red-400" />
+    </div>
+    <h3 className="font-bold text-lg text-zinc-900 mb-2">Are you sure?</h3>
+    <p className="text-zinc-500 text-sm mb-6 leading-relaxed">
+     This will permanently delete all your data including workout sessions, progress photos, weight logs, and community posts. This action cannot be undone.
+    </p>
+    <button
+     onClick={handleDeleteAccount}
+     disabled={deleteLoading}
+     className="w-full py-3.5 rounded-2xl bg-red-500 text-white font-bold active:scale-[0.98] transition-transform disabled:opacity-50 mb-2"
+    >
+     {deleteLoading ? 'Deleting…' : 'Delete Everything'}
+    </button>
+    <button onClick={() => setProfileModal(null)} className="w-full py-3 rounded-2xl bg-zinc-100 text-zinc-600 font-bold active:scale-[0.98] transition-transform">
+     Cancel
+    </button>
+   </div>
+  </ModalShell>
+ );
+
+ // ── Feedback modal (shared for feature request & support) ──────────────
+
+ // ── Render feedback page ──────────────────────────────────────────────────
+
+ const renderFeedback = () => {
+  const isFeature = feedbackType === 'feature_request';
+  const title = isFeature ? 'Request a Feature' : 'Support';
+  const placeholder = isFeature ? "I'd love it if FORMAX could..." : 'Describe your issue...';
+  const description = isFeature
+   ? 'Tell us what feature you\'d like to see in FORMAX. We read every suggestion.'
+   : 'Describe the issue you\'re experiencing and we\'ll get back to you.';
+
+  const submit = async () => {
+   if (!feedbackMessage.trim()) return;
+   setProfileSaving(true);
+   try {
+    const res = await fetch('/api/feedback', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ type: feedbackType, message: feedbackMessage, email: userProfile?.email ?? user?.primaryEmailAddress?.emailAddress }),
+    });
+    if (res.ok) {
+     setFeedbackMessage('');
+     setView('HOME');
+     setActiveTab('Profile');
+     setProfileToast(isFeature ? 'Feature request sent!' : 'Support message sent!');
+     setTimeout(() => setProfileToast(null), 2200);
+    }
+   } finally { setProfileSaving(false); }
+  };
+
+  return (
+   <motion.div
+    key="feedback"
+    initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+    transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+    className="absolute inset-0 bg-[#fafafa] flex flex-col"
+   >
+    {/* Header */}
+    <div className="flex items-center gap-3 px-5 pt-14 pb-4">
+     <button
+      onClick={() => { setFeedbackMessage(''); setView('HOME'); setActiveTab('Profile'); }}
+      className="w-9 h-9 rounded-full bg-zinc-100 flex items-center justify-center shrink-0"
+     >
+      <ChevronRight className="w-5 h-5 text-zinc-600 rotate-180" />
+     </button>
+     <h1 className="font-bold text-xl text-zinc-900">{title}</h1>
+    </div>
+
+    {/* Body */}
+    <div className="flex-1 overflow-y-auto px-5 pb-8">
+     <p className="text-zinc-500 text-sm mb-5 leading-relaxed">{description}</p>
+     <textarea
+      value={feedbackMessage}
+      onChange={e => setFeedbackMessage(e.target.value)}
+      maxLength={5000}
+      rows={8}
+      placeholder={placeholder}
+      className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none mb-1 shadow-sm"
+     />
+     <p className="text-right text-xs text-zinc-400 mb-6">{feedbackMessage.length}/5000</p>
+     <button
+      onClick={submit}
+      disabled={profileSaving || !feedbackMessage.trim()}
+      className="w-full py-4 rounded-2xl bg-emerald-500 text-white font-bold text-base active:scale-[0.98] transition-transform disabled:opacity-50"
+     >
+      {profileSaving ? 'Sending…' : 'Submit'}
+     </button>
+    </div>
+   </motion.div>
+  );
+ };
+
+ // ── Render profile modals ─────────────────────────────────────────────────
+
+ const renderProfileModals = () => (
+  <AnimatePresence>
+   {profileModal === 'personal' && <PersonalDetailsModal key="m-personal" />}
+   {profileModal === 'preferences' && <PreferencesModal key="m-preferences" />}
+   {profileModal === 'language' && <LanguageModal key="m-language" />}
+   {profileModal === 'targets' && <ScoreTargetsModal key="m-targets" />}
+   {profileModal === 'focus' && <FocusModal key="m-focus" />}
+   {profileModal === 'joints' && <JointThresholdsModal key="m-joints" />}
+   {profileModal === 'exercises' && <ExerciseLibraryModal key="m-exercises" />}
+   {profileModal === 'replay' && <ReplaySettingsModal key="m-replay" />}
+   {(profileModal === 'history' || profileModal === 'historyDetail') && <SessionHistoryModal key="m-history" />}
+   {profileModal === 'deleteConfirm' && <DeleteConfirmModal key="m-delete" />}
+  </AnimatePresence>
+ );
+
  return (
  <main className="relative w-full h-[100dvh] overflow-hidden bg-[#fafafa] font-sans antialiased text-black">
 
  <AnimatePresence mode="wait">
  {view === 'HOME' && activeTab === 'Home' && renderHome()}
- {view === 'HOME' && activeTab === 'Progress' && renderComingSoon('Progress')}
- {view === 'HOME' && activeTab === 'Community' && renderComingSoon('Community')}
+ {view === 'HOME' && activeTab === 'Progress' && renderProgress()}
+ {view === 'HOME' && activeTab === 'Community' && renderCommunity()}
  {view === 'HOME' && activeTab === 'Profile' && renderProfile()}
  {view === 'CAMERA' && renderCamera()}
  {view === 'PROCESSING' && renderProcessing()}
  {view === 'RESULT' && renderResult()}
+ {view === 'FEEDBACK' && renderFeedback()}
+ </AnimatePresence>
+
+ {/* Profile modals */}
+ {renderProfileModals()}
+
+ {/* Toast notification */}
+ <AnimatePresence>
+ {profileToast && (
+  <motion.div
+   initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }}
+   className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] bg-zinc-900 text-white px-5 py-2.5 rounded-full text-sm font-semibold shadow-lg"
+  >
+   {profileToast}
+  </motion.div>
+ )}
  </AnimatePresence>
  </main>
  );
