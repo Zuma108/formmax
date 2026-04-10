@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import LoadingScreen from '@/components/LoadingScreen';
 import { 
  X, Zap, Image as ImageIcon, HelpCircle, 
  Activity, CheckCircle2, ChevronRight, 
@@ -10,11 +11,13 @@ import {
  Bell, UserPlus, Settings, Globe, Palette,
  Target, TrendingUp, Award, Shield, Edit, Share2,
  LogOut, Trash2, Mail, FileText, ShieldCheck,
- MessageSquare, Crosshair, Dumbbell, Eye
+ MessageSquare, Crosshair, Dumbbell, Eye,
+ Smartphone, Scan, BarChart
 } from 'lucide-react';
 import Webcam from 'react-webcam';
 import { useUser, UserButton, SignInButton, useClerk } from '@clerk/nextjs';
 import ProgressSection from '@/components/ProgressSection';
+import FormAnalysisPopup from '@/components/FormAnalysisPopup';
 
 const MOCK_GRAPH_DATA = [
  { subject: 'Power', FORMAX: 88, GoldStandard: 95, fullMark: 100 },
@@ -47,7 +50,8 @@ const ModalShell = ({ title, onClose, children }: { title: string; onClose: () =
 );
 
 export default function MobileApp() {
- const [view, setView] = useState<'HOME' | 'CAMERA' | 'PROCESSING' | 'RESULT' | 'FEEDBACK'>('HOME');
+ const [view, setView] = useState<'HOME' | 'CAMERA' | 'PROCESSING' | 'RESULT' | 'FIX_FORM' | 'FEEDBACK'>('HOME');
+ const [showResultPopup, setShowResultPopup] = useState(false);
  const [feedbackType, setFeedbackType] = useState<'feature_request' | 'support'>('feature_request');
  const [activeTab, setActiveTab] = useState<'Home' | 'Progress' | 'Community' | 'Profile'>('Home');
  const { user, isSignedIn } = useUser();
@@ -98,7 +102,9 @@ export default function MobileApp() {
  } | null>(null);
 
  // Profile modals
- const [profileModal, setProfileModal] = useState<null | 'personal' | 'preferences' | 'language' | 'targets' | 'focus' | 'joints' | 'exercises' | 'replay' | 'history' | 'historyDetail' | 'deleteConfirm'>(null);
+ const [profileModal, setProfileModal] = useState<null | 'personal' | 'preferences' | 'language' | 'targets' | 'focus' | 'joints' | 'exercises' | 'replay' | 'history' | 'historyDetail' | 'deleteConfirm' | 'widgetHelp'>(null);
+ const [activeWidgetIndex, setActiveWidgetIndex] = useState(0);
+ const widgetScrollRef = useRef<HTMLDivElement>(null);
  const [profileSaving, setProfileSaving] = useState(false);
  const [profileToast, setProfileToast] = useState<string | null>(null);
  const [feedbackMessage, setFeedbackMessage] = useState('');
@@ -107,6 +113,12 @@ export default function MobileApp() {
  const [sessionsLoaded, setSessionsLoaded] = useState(false);
  const [selectedSession, setSelectedSession] = useState<any | null>(null);
  const [deleteLoading, setDeleteLoading] = useState(false);
+ const [profileLoaded, setProfileLoaded] = useState(false);
+
+ // Prefetched progress data
+ const [prefetchedStats, setPrefetchedStats] = useState<any>(undefined);
+ const [prefetchedWeightLogs, setPrefetchedWeightLogs] = useState<any[] | undefined>(undefined);
+ const [prefetchedPhotos, setPrefetchedPhotos] = useState<any[] | undefined>(undefined);
 
  const EXERCISE_OPTIONS = [
   { key: 'deadlift' as const, label: 'Deadlift', emoji: '🏋️' },
@@ -115,9 +127,27 @@ export default function MobileApp() {
   { key: 'generic' as const, label: 'Other', emoji: '🔄' },
  ];
 
+ // Prefetch progress data alongside profile so the Progress tab is instant
+ const prefetchProgress = useCallback(() => {
+   Promise.all([
+    fetch('/api/progress/stats').then(r => r.ok ? r.json() : null),
+    fetch('/api/progress/weight').then(r => r.ok ? r.json() : null),
+    fetch('/api/progress/photos').then(r => r.ok ? r.json() : null),
+   ])
+    .then(([stats, weight, photos]) => {
+     setPrefetchedStats(stats);
+     setPrefetchedWeightLogs(weight?.logs ?? []);
+     setPrefetchedPhotos(photos?.photos ?? []);
+    })
+    .catch(console.error);
+ }, []);
+
  // Load user profile from Supabase (onboarding data)
  useEffect(() => {
   if (!isSignedIn) return;
+
+  // Start prefetching progress data immediately
+  prefetchProgress();
 
   // Check if there's pending onboarding data saved before Clerk sign-up
   const pending = localStorage.getItem('pending_onboarding_profile');
@@ -137,18 +167,21 @@ export default function MobileApp() {
      })
      .then(r => r && r.ok ? r.json() : null)
      .then(d => { if (d?.profile) setUserProfile(d.profile); })
-     .catch(console.error);
+     .catch(console.error)
+     .finally(() => setProfileLoaded(true));
    } catch (e) {
     console.error('[pending onboarding]', e);
     localStorage.removeItem('pending_onboarding_profile');
+    setProfileLoaded(true);
    }
   } else {
    fetch('/api/user/profile')
     .then(r => r.ok ? r.json() : null)
     .then(d => { if (d?.profile) setUserProfile(d.profile); })
-    .catch(console.error);
+    .catch(console.error)
+    .finally(() => setProfileLoaded(true));
   }
- }, [isSignedIn]);
+ }, [isSignedIn, prefetchProgress]);
 
  // Load community data when tab activates
  useEffect(() => {
@@ -274,7 +307,7 @@ export default function MobileApp() {
  if (data.rejected) {
  setAnalysisError(data.rejection_reason || 'No exercise detected. Record yourself performing the full movement.');
  setResult(null);
- setTimeout(() => setView('RESULT'), 500);
+ setTimeout(() => { setView('HOME'); setShowResultPopup(true); }, 500);
  return;
  }
  
@@ -287,16 +320,27 @@ export default function MobileApp() {
  }).then(r => r.json()).then(json => {
   if (json?.id) setSessionId(json.id);
  }).catch(console.error);
- setTimeout(() => setView('RESULT'), 1000);
+ setTimeout(() => { setView('HOME'); setShowResultPopup(true); }, 1000);
  
  } catch (e) {
  console.error(e);
- const msg = e instanceof DOMException && e.name === 'AbortError'
- ? 'Analysis timed out. Try a shorter clip or better connection.'
- : e instanceof Error ? e.message : 'Analysis failed. Please try again.';
+ let msg: string;
+ if (e instanceof DOMException && e.name === 'AbortError') {
+  msg = 'Analysis timed out. Try a shorter clip or better connection.';
+ } else if (e instanceof Error) {
+  // Sanitize: don't show raw JSON or overly long API errors to the user
+  const raw = e.message;
+  if (raw.length > 200 || raw.startsWith('{') || raw.includes('RESOURCE_EXHAUSTED') || raw.includes('quota')) {
+   msg = 'Our AI service is temporarily at capacity. Please try again in a minute.';
+  } else {
+   msg = raw;
+  }
+ } else {
+  msg = 'Analysis failed. Please try again.';
+ }
  setAnalysisError(msg);
  setResult(null);
- setTimeout(() => setView('RESULT'), 1000);
+ setTimeout(() => { setView('HOME'); setShowResultPopup(true); }, 1000);
  }
  };
 
@@ -364,8 +408,40 @@ export default function MobileApp() {
  return { bg: 'bg-red-50', border: 'border-red-100', text: 'text-red-600', ring: '#dc2626' };
  };
 
- // Mock data — would come from user's history
- const formaxScore = 87;
+ // Calculate starting FormAX score from onboarding profile
+ const formaxScore = useMemo(() => {
+  if (!userProfile) return 75; // default before profile loads
+
+  // Base score by experience level
+  let score = 75;
+  if (userProfile.experience === 'Beginner') score = 62;
+  else if (userProfile.experience === 'Intermediate') score = 75;
+  else if (userProfile.experience === 'Advanced') score = 86;
+
+  // Weaknesses: each known weakness lowers the score
+  const weaknesses = userProfile.weaknesses ?? [];
+  score -= weaknesses.length * 3;
+
+  // Injuries: each injury area lowers the score, "None" gives a bonus
+  const injuries = userProfile.injuries ?? [];
+  if (injuries.includes('None') || injuries.length === 0) {
+   score += 4;
+  } else {
+   score -= injuries.filter(i => i !== 'None').length * 4;
+  }
+
+  // Strictness: strict grading starts you lower, hype man starts higher
+  if (userProfile.strictness === 'Strict') score -= 5;
+  else if (userProfile.strictness === 'Hype Man') score += 4;
+
+  // Goal-based adjustment
+  if (userProfile.primary_goal === 'PRs') score += 2;
+  else if (userProfile.primary_goal === 'Injuries') score -= 2;
+
+  // Clamp to 30-98 range
+  return Math.max(30, Math.min(98, Math.round(score)));
+ }, [userProfile]);
+
  const jointData = [
  { name: 'Knees', score: 72, icon: '🦵' },
  { name: 'Shoulders', score: 45, icon: '💪' },
@@ -382,22 +458,56 @@ export default function MobileApp() {
  });
  }, []);
  const [activeDay, setActiveDay] = useState(() => new Date().getDay());
+ const [heroSlide, setHeroSlide] = useState(0);
+ const heroSliderRef = useRef<HTMLDivElement>(null);
 
- // SVG ring helper
+ // SVG ring helper — matches FormAnalysisPopup gradient style
+ const getScoreGradient = (score: number) => {
+ if (score < 40) return {
+  stops: [{ offset: "0%", color: "#b91c1c" }, { offset: "50%", color: "#dc2626" }, { offset: "100%", color: "#ef4444" }],
+  glow: "#ef4444",
+ };
+ if (score < 70) return {
+  stops: [{ offset: "0%", color: "#dc2626" }, { offset: "40%", color: "#ff6a00" }, { offset: "70%", color: "#ff9500" }, { offset: "100%", color: "#ffbe00" }],
+  glow: "#ff9500",
+ };
+ return {
+  stops: [{ offset: "0%", color: "#dc2626" }, { offset: "25%", color: "#ff6a00" }, { offset: "50%", color: "#ffbe00" }, { offset: "75%", color: "#4ade80" }, { offset: "100%", color: "#22c55e" }],
+  glow: "#22c55e",
+ };
+ };
+
+ const ringCounterRef = useRef(0);
+
  const Ring = ({ score, size = 56, stroke = 5 }: { score: number; size?: number; stroke?: number }) => {
+ const [uid] = useState(() => `p2-ring-${ringCounterRef.current++}`);
  const r = (size - stroke) / 2;
  const circ = 2 * Math.PI * r;
  const offset = circ - (score / 100) * circ;
- const color = scoreColor(score).ring;
+ const grad = getScoreGradient(score);
+ const gradId = `grad-${uid}`;
+ const glowId = `glow-${uid}`;
  return (
- <svg width={size} height={size} className="-rotate-90">
- <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f4f4f5" strokeWidth={stroke} />
+ <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+ <defs>
+  <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+  {grad.stops.map((s, i) => <stop key={i} offset={s.offset} stopColor={s.color} />)}
+  </linearGradient>
+  <filter id={glowId}>
+  <feGaussianBlur stdDeviation="2" result="blur" />
+  <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+  </filter>
+ </defs>
+ <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1a1a2e" strokeWidth={stroke} />
  <motion.circle
- cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+ cx={size/2} cy={size/2} r={r} fill="none"
+ stroke={`url(#${gradId})`} strokeWidth={stroke}
  strokeLinecap="round"
  initial={{ strokeDasharray: circ, strokeDashoffset: circ }}
  animate={{ strokeDashoffset: offset }}
  transition={{ duration: 1.2, ease: 'easeOut' }}
+ transform={`rotate(-90 ${size/2} ${size/2})`}
+ filter={`url(#${glowId})`}
  />
  </svg>
  );
@@ -445,8 +555,20 @@ export default function MobileApp() {
  ))}
  </div>
 
- {/* Hero FORMAX Card */}
- <div className="mx-6 mt-2 bg-white rounded-[2rem] p-6 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-zinc-100">
+ {/* Hero Card + Joint Health Slider */}
+ <div
+ ref={heroSliderRef}
+ className="mt-2 flex overflow-x-auto snap-x snap-mandatory"
+ style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
+ onScroll={(e) => {
+ const el = e.currentTarget;
+ const idx = Math.round(el.scrollLeft / el.offsetWidth);
+ setHeroSlide(idx);
+ }}
+ >
+ {/* Slide 1 – FORMAX Score */}
+ <div className="flex-none w-full snap-start px-6">
+ <div className="bg-white rounded-[2rem] p-6 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-zinc-100">
  <div className="flex items-center justify-between">
  <div>
  <motion.span
@@ -461,21 +583,116 @@ export default function MobileApp() {
  <Ring score={formaxScore} size={72} stroke={6} />
  </div>
  </div>
+ </div>
 
- {/* Joint Health Cards */}
- <div className="flex gap-3 px-6 mt-4 overflow-x-auto">
- {jointData.map((joint) => {
- const c = scoreColor(joint.score);
- return (
- <div key={joint.name} className={`flex-1 min-w-[90px] ${c.bg} rounded-2xl p-4 border ${c.border}`}>
- <div className="flex items-center gap-2">
- <Ring score={joint.score} size={40} stroke={4} />
- <span className={`text-2xl font-black ${c.text}`}>{joint.score}</span>
+ {/* Slide 2 – Joint Health Body Map */}
+ <div className="flex-none w-full snap-start px-6">
+ <div className="bg-white rounded-[2rem] p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-zinc-100">
+ <div className="flex items-center gap-2 mb-3">
+ <Activity className="w-4 h-4 text-zinc-400" />
+ <span className="text-zinc-500 font-semibold text-xs uppercase tracking-wide">Joint Health</span>
  </div>
- <p className="text-zinc-500 text-xs font-semibold mt-1.5">{joint.name}</p>
+ <div className="flex items-center gap-4">
+ {/* SVG Body Silhouette with joint indicators */}
+ <div className="relative shrink-0" style={{ width: 120, height: 180 }}>
+ <svg viewBox="0 0 120 180" width={120} height={180} fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+  {jointData.map((j, i) => {
+   const jc = scoreColor(j.score);
+   return (
+   <radialGradient key={`jglow-${i}`} id={`jglow-${i}`}>
+    <stop offset="0%" stopColor={jc.ring} stopOpacity="0.5" />
+    <stop offset="100%" stopColor={jc.ring} stopOpacity="0" />
+   </radialGradient>
+   );
+  })}
+  </defs>
+  {/* Body silhouette */}
+  <path
+  d="M60 12 C60 12 52 12 52 20 C52 28 56 30 56 30 L54 36 C48 38 38 42 34 50 L26 70 C24 74 22 78 24 80 C26 82 30 80 32 78 L38 66 L36 90 L34 120 C34 124 36 126 38 126 L42 126 C44 126 46 124 46 120 L50 96 L54 96 L54 120 C54 124 56 126 58 126 L62 126 C64 126 66 124 66 120 L66 96 L70 96 L74 120 C74 124 76 126 78 126 L82 126 C84 126 86 124 86 120 L84 90 L82 66 L88 78 C90 80 94 82 96 80 C98 78 96 74 94 70 L86 50 C82 42 72 38 66 36 L64 30 C64 30 68 28 68 20 C68 12 60 12 60 12 Z"
+  fill="#f4f4f5"
+  stroke="#d4d4d8"
+  strokeWidth="1"
+  />
+  {/* Head circle */}
+  <circle cx="60" cy="14" r="10" fill="#f4f4f5" stroke="#d4d4d8" strokeWidth="1" />
+
+  {/* Joint indicators with glow + pulse */}
+  {/* Shoulders - left */}
+  <motion.circle cx="38" cy="44" r="10" fill={`url(#jglow-1)`}
+  animate={{ r: [10, 14, 10] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />
+  <motion.circle cx="38" cy="44" r="5" fill={scoreColor(jointData[1].score).ring}
+  initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.3, type: 'spring' }} />
+  {/* Shoulders - right */}
+  <motion.circle cx="82" cy="44" r="10" fill={`url(#jglow-1)`}
+  animate={{ r: [10, 14, 10] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }} />
+  <motion.circle cx="82" cy="44" r="5" fill={scoreColor(jointData[1].score).ring}
+  initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.4, type: 'spring' }} />
+
+  {/* Lower Back */}
+  <motion.circle cx="60" cy="82" r="10" fill={`url(#jglow-2)`}
+  animate={{ r: [10, 14, 10] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }} />
+  <motion.circle cx="60" cy="82" r="5" fill={scoreColor(jointData[2].score).ring}
+  initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.5, type: 'spring' }} />
+
+  {/* Knees - left */}
+  <motion.circle cx="44" cy="108" r="10" fill={`url(#jglow-0)`}
+  animate={{ r: [10, 14, 10] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.9 }} />
+  <motion.circle cx="44" cy="108" r="5" fill={scoreColor(jointData[0].score).ring}
+  initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.6, type: 'spring' }} />
+  {/* Knees - right */}
+  <motion.circle cx="76" cy="108" r="10" fill={`url(#jglow-0)`}
+  animate={{ r: [10, 14, 10] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }} />
+  <motion.circle cx="76" cy="108" r="5" fill={scoreColor(jointData[0].score).ring}
+  initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.7, type: 'spring' }} />
+ </svg>
  </div>
- );
+
+ {/* Joint score list */}
+ <div className="flex-1 flex flex-col gap-3">
+ {jointData.map((j) => {
+  const jc = scoreColor(j.score);
+  const pct = j.score;
+  return (
+  <div key={j.name}>
+  <div className="flex items-center justify-between mb-1">
+   <div className="flex items-center gap-2">
+   <span className="text-base">{j.icon}</span>
+   <span className="font-semibold text-zinc-800 text-[13px]">{j.name}</span>
+   </div>
+   <span className={`font-black text-base tabular-nums ${jc.text}`}>{j.score}</span>
+  </div>
+  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+   <motion.div
+   className="h-full rounded-full"
+   style={{ backgroundColor: jc.ring }}
+   initial={{ width: 0 }}
+   animate={{ width: `${pct}%` }}
+   transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
+   />
+  </div>
+  </div>
+  );
  })}
+ </div>
+ </div>
+ </div>
+ </div>
+ </div>
+
+ {/* Pagination dots */}
+ <div className="flex justify-center gap-1.5 mt-2">
+ {[0, 1].map((i) => (
+ <button
+ key={i}
+ onClick={() => {
+ heroSliderRef.current?.scrollTo({ left: i * heroSliderRef.current.offsetWidth, behavior: 'smooth' });
+ }}
+ className={`h-1.5 rounded-full transition-all duration-300 ${
+ heroSlide === i ? 'w-5 bg-zinc-800' : 'w-1.5 bg-zinc-300'
+ }`}
+ />
+ ))}
  </div>
 
  {/* Recent Sessions */}
@@ -545,6 +762,9 @@ export default function MobileApp() {
  weaknesses={userProfile?.weaknesses ?? null}
  injuries={userProfile?.injuries ?? null}
  experience={userProfile?.experience ?? null}
+ prefetchedStats={prefetchedStats}
+ prefetchedWeightLogs={prefetchedWeightLogs}
+ prefetchedPhotos={prefetchedPhotos}
  />
  {renderBottomNav()}
  </>
@@ -572,12 +792,14 @@ export default function MobileApp() {
  {/* Challenge Cards */}
  <div className="px-6 space-y-3 mb-6">
  {[
- { title: 'Squat Form Challenge', members: 128, emoji: '🏋️', color: 'bg-amber-50 border-amber-100' },
- { title: 'Deadlift Academy', members: 87, emoji: '💪', color: 'bg-red-50 border-red-100' },
- { title: 'Perfect Press Club', members: 54, emoji: '⬆️', color: 'bg-blue-50 border-blue-100' },
+ { title: 'Squat Form Challenge', members: 128, img: '/assets/squat.svg', alt: 'Squat', color: 'bg-amber-50 border-amber-100' },
+ { title: 'Deadlift Academy', members: 87, img: '/assets/deadlift.svg', alt: 'Deadlift', color: 'bg-red-50 border-red-100' },
+ { title: 'Perfect Press Club', members: 54, img: '/assets/benchpress.svg', alt: 'Bench press', color: 'bg-blue-50 border-blue-100' },
  ].map((group) => (
  <div key={group.title} className={`${group.color} border rounded-3xl p-5 flex items-center gap-4`}>
- <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center text-2xl">{group.emoji}</div>
+ <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center overflow-hidden">
+   <img src={group.img} alt={group.alt} className="w-10 h-10 object-contain" />
+ </div>
  <div className="flex-1">
  <h3 className="font-bold text-zinc-900">{group.title}</h3>
  <p className="text-xs text-zinc-500 font-medium">{group.members} members • Active</p>
@@ -596,7 +818,7 @@ export default function MobileApp() {
  {[
  { name: 'Alex K.', score: 96, rank: 1 },
  { name: 'Jordan M.', score: 94, rank: 2 },
- { name: 'You', score: 87, rank: 5 },
+ { name: 'You', score: formaxScore, rank: 5 },
  ].map((entry) => (
  <div key={entry.name} className={`flex items-center gap-3 py-3 border-b border-zinc-50 last:border-0 ${entry.name === 'You' ? 'bg-emerald-50/50 -mx-2 px-2 rounded-xl' : ''}`}>
  <span className="w-6 text-center font-black text-zinc-400 text-sm">#{entry.rank}</span>
@@ -768,6 +990,164 @@ export default function MobileApp() {
  </div>
  </div>
 
+ {/* Widgets Section */}
+ <div className="mx-6 mb-6">
+ <div className="flex items-center justify-between mb-2.5">
+ <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide">Widgets</p>
+ <button onClick={() => setProfileModal('widgetHelp')} className="text-zinc-400 text-xs font-bold hover:text-zinc-600 transition-colors">
+ How to add?
+ </button>
+ </div>
+
+ {/* Horizontal swipeable widget carousel */}
+ <div
+ ref={widgetScrollRef}
+ className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-3 -mx-1 px-1 hide-scrollbar"
+ onScroll={(e) => {
+ const el = e.currentTarget;
+ const cardWidth = el.firstElementChild ? (el.firstElementChild as HTMLElement).offsetWidth + 16 : 1;
+ const idx = Math.round(el.scrollLeft / cardWidth);
+ setActiveWidgetIndex(Math.min(idx, 3));
+ }}
+ >
+ {/* Widget 1: Form Score (Small) */}
+ <div className="snap-center shrink-0 w-[260px] bg-white rounded-3xl shadow-sm border border-zinc-100 p-5 flex flex-col items-center gap-3">
+ <div className="relative flex items-center justify-center">
+ <Ring score={formaxScore} size={120} stroke={10} />
+ <div className="absolute inset-0 flex flex-col items-center justify-center">
+ <span className="text-3xl font-black text-zinc-900 leading-none">{formaxScore}</span>
+ <span className="text-zinc-400 text-[11px] font-semibold mt-0.5">Form score</span>
+ </div>
+ </div>
+ <button
+ onClick={() => setView('CAMERA')}
+ className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white rounded-full py-3 px-5 font-bold text-sm active:scale-[0.97] transition-transform"
+ >
+ <Plus className="w-4 h-4" />
+ Start session
+ </button>
+ </div>
+
+ {/* Widget 2: Form Score + Joint Health (Medium) */}
+ <div className="snap-center shrink-0 w-[320px] bg-white rounded-3xl shadow-sm border border-zinc-100 p-5 flex flex-col gap-4">
+ <div className="flex items-center gap-2 mb-1">
+ <Activity className="w-4 h-4 text-zinc-400" />
+ <span className="text-zinc-400 text-[10px] font-semibold uppercase tracking-wide">Joint Health</span>
+ </div>
+ <div className="flex flex-col gap-3">
+ {jointData.map((j) => {
+ const jc = scoreColor(j.score);
+ return (
+ <div key={j.name} className="flex items-center gap-3">
+  <div className={`w-9 h-9 rounded-xl ${jc.bg} border ${jc.border} flex items-center justify-center shrink-0`}>
+  <span className="text-sm">{j.icon}</span>
+  </div>
+  <div className="flex-1 min-w-0">
+  <div className="flex items-center justify-between mb-1">
+   <span className="font-semibold text-zinc-800 text-[13px]">{j.name}</span>
+   <span className={`font-black text-sm tabular-nums ${jc.text}`}>{j.score}</span>
+  </div>
+  <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+   <motion.div
+   className="h-full rounded-full"
+   style={{ backgroundColor: jc.ring }}
+   initial={{ width: 0 }}
+   animate={{ width: `${j.score}%` }}
+   transition={{ duration: 0.8, ease: 'easeOut' }}
+   />
+  </div>
+  </div>
+ </div>
+ );
+ })}
+ </div>
+ </div>
+
+ {/* Widget 3: Streak & Quick Actions (Medium) */}
+ <div className="snap-center shrink-0 w-[320px] bg-white rounded-3xl shadow-sm border border-zinc-100 p-5 flex items-center gap-4">
+ {/* Quick actions */}
+ <div className="flex flex-col gap-3 shrink-0">
+ <button
+ onClick={() => setView('CAMERA')}
+ className="flex flex-col items-center gap-1.5 bg-zinc-50 rounded-2xl px-5 py-3 border border-zinc-100 active:bg-zinc-100 transition-colors"
+ >
+ <Scan className="w-5 h-5 text-zinc-600" />
+ <span className="text-zinc-700 text-[11px] font-bold">Record</span>
+ </button>
+ <button
+ onClick={() => setActiveTab('Progress')}
+ className="flex flex-col items-center gap-1.5 bg-zinc-50 rounded-2xl px-5 py-3 border border-zinc-100 active:bg-zinc-100 transition-colors"
+ >
+ <BarChart className="w-5 h-5 text-zinc-600" />
+ <span className="text-zinc-700 text-[11px] font-bold">Progress</span>
+ </button>
+ </div>
+ {/* Streak fire */}
+ <div className="flex-1 flex flex-col items-center justify-center">
+ <div className="relative">
+ <motion.div
+ animate={{ scale: [1, 1.08, 1] }}
+ transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+ className="w-20 h-20 rounded-3xl bg-gradient-to-br from-orange-100 via-amber-50 to-orange-50 flex items-center justify-center"
+ >
+ <Flame className="w-10 h-10 text-orange-500" />
+ </motion.div>
+ <motion.div
+ animate={{ opacity: [0.3, 0.7, 0.3] }}
+ transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+ className="absolute -top-1 -right-1 w-4 h-4 text-amber-400"
+ >
+ <Zap className="w-4 h-4" />
+ </motion.div>
+ </div>
+ <span className="text-3xl font-black text-zinc-900 mt-2 leading-none">0</span>
+ <span className="text-zinc-400 text-[11px] font-semibold">Day streak</span>
+ </div>
+ </div>
+
+ {/* Widget 4: Weekly Stats (Small) */}
+ <div className="snap-center shrink-0 w-[260px] bg-white rounded-3xl shadow-sm border border-zinc-100 p-5 flex flex-col gap-4">
+ <div className="flex items-center gap-3">
+ <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
+ <BarChart3 className="w-5 h-5 text-blue-600" />
+ </div>
+ <div>
+ <p className="text-zinc-400 text-[10px] font-semibold uppercase tracking-wide">This Week</p>
+ <p className="text-2xl font-black text-zinc-900 leading-none">0</p>
+ </div>
+ </div>
+ <div className="h-px bg-zinc-100" />
+ <div className="flex items-center gap-3">
+ <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
+ <TrendingUp className="w-5 h-5 text-emerald-600" />
+ </div>
+ <div>
+ <p className="text-zinc-400 text-[10px] font-semibold uppercase tracking-wide">7-Day Average</p>
+ <p className="text-2xl font-black text-zinc-900 leading-none">—</p>
+ </div>
+ </div>
+ </div>
+ </div>
+
+ {/* Dot indicators */}
+ <div className="flex items-center justify-center gap-2 mb-2">
+ {[0, 1, 2, 3].map((i) => (
+ <button
+ key={i}
+ onClick={() => {
+ const el = widgetScrollRef.current;
+ if (!el || !el.firstElementChild) return;
+ const cardWidth = (el.firstElementChild as HTMLElement).offsetWidth + 16;
+ el.scrollTo({ left: cardWidth * i, behavior: 'smooth' });
+ }}
+ className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+ activeWidgetIndex === i ? 'bg-zinc-900 w-4' : 'bg-zinc-300'
+ }`}
+ />
+ ))}
+ </div>
+ </div>
+
  {/* Support & Legal */}
  <div className="mx-6 mb-6">
  <p className="text-zinc-400 text-xs font-bold uppercase tracking-wide mb-2.5">Support & Legal</p>
@@ -776,7 +1156,7 @@ export default function MobileApp() {
  { icon: MessageSquare, label: 'Request a Feature', action: () => { setFeedbackType('feature_request'); setView('FEEDBACK'); } },
  { icon: Mail, label: 'Support', action: () => { setFeedbackType('support'); setView('FEEDBACK'); } },
  { icon: FileText, label: 'Terms and Conditions', action: undefined },
- { icon: ShieldCheck, label: 'Privacy Policy', action: undefined },
+ { icon: ShieldCheck, label: 'Privacy Policy', action: () => window.open('/privacy', '_blank') },
  ].map((item) => (
  <button key={item.label} onClick={item.action} className="w-full px-5 py-4 flex items-center gap-4 border-b border-zinc-100/60 last:border-0 active:bg-zinc-50 transition-colors">
  <item.icon className="w-5 h-5 text-zinc-500" />
@@ -1011,46 +1391,10 @@ export default function MobileApp() {
  </motion.div>
  );
 
- const renderResult = () => {
- // Error state
- if (analysisError && !result) {
- const isRejection = analysisError.toLowerCase().includes('no exercise') 
- || analysisError.toLowerCase().includes('no human')
- || analysisError.toLowerCase().includes('not visible')
- || analysisError.toLowerCase().includes('no recognizable');
- return (
- <motion.div
- key="result"
- initial={{ y: "100%" }}
- animate={{ y: 0 }}
- className="absolute inset-0 z-50 bg-[#fafafa] flex flex-col items-center justify-center pt-14 pb-8 px-6 text-zinc-900"
- >
- <div className={`${isRejection ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'} border rounded-3xl p-8 text-center max-w-sm`}>
- <div className="text-4xl mb-4">{isRejection ? '🎥' : '⚠️'}</div>
- <h2 className={`font-bold text-xl ${isRejection ? 'text-amber-800' : 'text-red-700'} mb-2`}>
- {isRejection ? 'No Exercise Detected' : 'Analysis Failed'}
- </h2>
- <p className={`${isRejection ? 'text-amber-700' : 'text-red-600'} text-sm mb-2`}>{analysisError}</p>
- {isRejection && (
- <div className="text-zinc-500 text-xs mb-4 space-y-1">
- <p>Make sure your recording shows:</p>
- <p>Full body visible performing the movement</p>
- <p>Good lighting &amp; a clear side-angle view</p>
- </div>
- )}
- <button
- className="w-full py-3 rounded-2xl bg-zinc-900 text-white font-bold active:scale-95 transition-transform"
- onClick={() => { setAnalysisError(null); setView('CAMERA'); }}
- >
- {isRejection ? 'Record Again' : 'Try Again'}
- </button>
- </div>
- </motion.div>
- );
- }
+ const renderFixForm = () => {
+ if (!result) return null;
 
  const finalScore = result?.final_score ?? 0;
- const sc = scoreColor(finalScore);
  const checkpoints: Array<{ name: string; score: number; feedback: string; observed_details?: string }> = result?.checkpoints ?? [];
  const badFormFlags: string[] = result?.bad_form_flags ?? [];
  const injuryRisk: string = result?.injury_risk ?? 'unknown';
@@ -1067,18 +1411,21 @@ export default function MobileApp() {
 
  return (
  <motion.div
- key="result"
- initial={{ y: "100%" }}
- animate={{ y: 0 }}
+ key="fix-form"
+ initial={{ x: "100%" }}
+ animate={{ x: 0 }}
+ exit={{ x: "100%" }}
+ transition={{ type: 'spring', damping: 28, stiffness: 260 }}
  className="absolute inset-0 z-50 bg-[#fafafa] flex flex-col pt-14 pb-8 px-6 text-zinc-900 overflow-y-auto"
  >
- <header className="flex items-center justify-between mb-6">
- <h1 className="font-black text-2xl tracking-tight">Form Analysis</h1>
- <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center cursor-pointer"
- onClick={() => setView('HOME')}
+ <header className="flex items-center gap-3 mb-6">
+ <button
+  className="w-9 h-9 rounded-full bg-zinc-100 flex items-center justify-center shrink-0"
+  onClick={() => { setView('HOME'); setShowResultPopup(true); }}
  >
- <X className="w-6 h-6" />
- </div>
+  <ChevronRight className="w-5 h-5 text-zinc-600 rotate-180" />
+ </button>
+ <h1 className="font-black text-xl tracking-tight">How to Improve</h1>
  </header>
 
  {/* Exercise Mismatch Warning */}
@@ -1089,41 +1436,11 @@ export default function MobileApp() {
  </div>
  )}
 
- {/* Main Score Card */}
- {result && (
- <div className={`flex flex-col items-center mb-5 bg-white p-6 rounded-[2rem] shadow-[0_10px_40px_rgba(0,0,0,0.05)] border border-black/5`}>
- <div className="relative mb-3">
- <Ring score={finalScore} size={100} stroke={8} />
- <div className="absolute inset-0 flex items-center justify-center">
- <span className="text-3xl font-black text-zinc-800">{finalScore.toFixed(0)}</span>
- </div>
- </div>
- <span className="font-semibold text-zinc-400 text-xs tracking-widest uppercase mb-3">Overall Form Score</span>
-
  {/* Injury Risk Badge */}
- <div className={`${ib.bg} ${ib.border} border rounded-full px-4 py-1.5 mb-4`}>
- <span className={`text-xs font-bold ${ib.text}`}>
- <Shield className="w-3 h-3 inline mr-1" />{ib.label}
- </span>
+ <div className={`${ib.bg} ${ib.border} border rounded-2xl px-4 py-3 mb-4 flex items-center gap-2`}>
+ <Shield className="w-4 h-4" />
+ <span className={`text-sm font-bold ${ib.text}`}>{ib.label}</span>
  </div>
-
- {/* Score Breakdown Row */}
- <div className="w-full flex justify-between gap-2">
- <div className="flex-1 bg-zinc-50 rounded-2xl p-3 flex flex-col items-center">
- <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Checkpoints</span>
- <span className="font-bold text-zinc-700 text-lg">{result.checkpoint_average?.toFixed(0) ?? '—'}</span>
- </div>
- <div className="flex-1 bg-zinc-50 rounded-2xl p-3 flex flex-col items-center">
- <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Consistency</span>
- <span className="font-bold text-zinc-700 text-lg">{result.consistency_score?.toFixed(0) ?? '—'}</span>
- </div>
- <div className="flex-1 bg-zinc-50 rounded-2xl p-3 flex flex-col items-center">
- <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Quality</span>
- <span className="font-bold text-zinc-700 text-lg">{result.quality_adjustment?.toFixed(0) ?? '—'}</span>
- </div>
- </div>
- </div>
- )}
 
  {/* Bad Form Flags */}
  {badFormFlags.length > 0 && (
@@ -1141,7 +1458,7 @@ export default function MobileApp() {
  </div>
  )}
 
- {/* Checkpoint Breakdown */}
+ {/* Checkpoint Breakdown — full detail */}
  {checkpoints.length > 0 && (
  <div className="mb-4">
  <h2 className="font-bold text-lg ml-1 mb-3">Checkpoint Scores</h2>
@@ -1282,13 +1599,13 @@ export default function MobileApp() {
  )}
  <button
  className="w-full mt-4 py-4 rounded-2xl bg-black text-white font-bold text-lg active:scale-95 transition-transform"
- onClick={() => { setView('CAMERA'); setPostedToCommunity(false); }}
+ onClick={() => { setView('CAMERA'); setPostedToCommunity(false); setShowResultPopup(false); }}
  >
  Record Again
  </button>
  <button
  className="w-full mt-2 py-3 rounded-2xl bg-zinc-100 text-zinc-600 font-bold text-sm active:scale-95 transition-transform"
- onClick={() => { setView('HOME'); setPostedToCommunity(false); }}
+ onClick={() => { setView('HOME'); setPostedToCommunity(false); setShowResultPopup(false); }}
  >
  Back to Home
  </button>
@@ -2036,8 +2353,106 @@ export default function MobileApp() {
    {profileModal === 'replay' && <ReplaySettingsModal key="m-replay" />}
    {(profileModal === 'history' || profileModal === 'historyDetail') && <SessionHistoryModal key="m-history" />}
    {profileModal === 'deleteConfirm' && <DeleteConfirmModal key="m-delete" />}
+   {profileModal === 'widgetHelp' && (
+    <motion.div
+     key="m-widgetHelp"
+     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+     className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-sm"
+     onClick={() => setProfileModal(null)}
+    >
+     <motion.div
+      initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+      transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+      className="bg-white rounded-t-[2rem] w-full max-w-md max-h-[85vh] overflow-y-auto px-6 pt-5 pb-10"
+      onClick={e => e.stopPropagation()}
+     >
+      <div className="flex items-center justify-between mb-5">
+       <h2 className="font-bold text-xl text-zinc-900">Add Widgets</h2>
+       <button onClick={() => setProfileModal(null)} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center">
+        <X className="w-4 h-4 text-zinc-500" />
+       </button>
+      </div>
+
+      <p className="text-zinc-500 text-sm mb-6">
+       Add FORMAX widgets to your home screen to track your form score, streak, and stats at a glance.
+      </p>
+
+      {/* iOS Instructions */}
+      <div className="mb-6">
+       <div className="flex items-center gap-2 mb-3">
+        <div className="w-7 h-7 rounded-lg bg-zinc-900 flex items-center justify-center">
+         <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        </div>
+        <h3 className="font-bold text-zinc-900 text-[15px]">iPhone & iPad</h3>
+       </div>
+       <div className="space-y-3 pl-9">
+        {[
+         'Long-press any empty area on your Home Screen',
+         'Tap the + button in the top-left corner',
+         'Search for "FORMAX" in the widget gallery',
+         'Choose your preferred widget size (Small or Medium)',
+         'Tap "Add Widget" and position it on your Home Screen',
+        ].map((step, i) => (
+         <div key={i} className="flex items-start gap-3">
+          <span className="w-5 h-5 rounded-full bg-zinc-100 flex items-center justify-center shrink-0 text-[11px] font-bold text-zinc-500">{i + 1}</span>
+          <p className="text-zinc-600 text-sm leading-snug">{step}</p>
+         </div>
+        ))}
+       </div>
+      </div>
+
+      {/* Android Instructions */}
+      <div className="mb-4">
+       <div className="flex items-center gap-2 mb-3">
+        <div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center">
+         <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24a11.463 11.463 0 00-8.94 0L5.65 5.67c-.19-.29-.58-.38-.87-.2-.28.18-.37.54-.22.83L6.4 9.48A10.78 10.78 0 002 18h20a10.78 10.78 0 00-4.4-8.52zM7 15.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/></svg>
+        </div>
+        <h3 className="font-bold text-zinc-900 text-[15px]">Android</h3>
+       </div>
+       <div className="space-y-3 pl-9">
+        {[
+         'Long-press any empty area on your Home Screen',
+         'Tap "Widgets" from the menu that appears',
+         'Scroll or search for "FORMAX"',
+         'Long-press the widget and drag it to your Home Screen',
+         'Resize by long-pressing the placed widget and dragging corners',
+        ].map((step, i) => (
+         <div key={i} className="flex items-start gap-3">
+          <span className="w-5 h-5 rounded-full bg-zinc-100 flex items-center justify-center shrink-0 text-[11px] font-bold text-zinc-500">{i + 1}</span>
+          <p className="text-zinc-600 text-sm leading-snug">{step}</p>
+         </div>
+        ))}
+       </div>
+      </div>
+
+      {/* Widget sizes info */}
+      <div className="mt-6 p-4 rounded-2xl bg-zinc-50 border border-zinc-100">
+       <div className="flex items-center gap-2 mb-2">
+        <Smartphone className="w-4 h-4 text-zinc-500" />
+        <p className="text-zinc-700 text-sm font-bold">Available Sizes</p>
+       </div>
+       <div className="flex gap-3">
+        <div className="flex-1 flex flex-col items-center gap-1">
+         <div className="w-12 h-12 rounded-xl bg-white border border-zinc-200 shadow-sm" />
+         <span className="text-zinc-400 text-[10px] font-semibold">Small</span>
+        </div>
+        <div className="flex-1 flex flex-col items-center gap-1">
+         <div className="w-20 h-12 rounded-xl bg-white border border-zinc-200 shadow-sm" />
+         <span className="text-zinc-400 text-[10px] font-semibold">Medium</span>
+        </div>
+        <div className="flex-1 flex flex-col items-center gap-1">
+         <div className="w-20 h-20 rounded-xl bg-white border border-zinc-200 shadow-sm" />
+         <span className="text-zinc-400 text-[10px] font-semibold">Large</span>
+        </div>
+       </div>
+      </div>
+     </motion.div>
+    </motion.div>
+   )}
   </AnimatePresence>
  );
+
+ if (!profileLoaded) return <LoadingScreen />;
 
  return (
  <main className="relative w-full h-[100dvh] overflow-hidden bg-[#fafafa] font-sans antialiased text-black">
@@ -2049,8 +2464,22 @@ export default function MobileApp() {
  {view === 'HOME' && activeTab === 'Profile' && renderProfile()}
  {view === 'CAMERA' && renderCamera()}
  {view === 'PROCESSING' && renderProcessing()}
- {view === 'RESULT' && renderResult()}
+ {view === 'FIX_FORM' && renderFixForm()}
  {view === 'FEEDBACK' && renderFeedback()}
+ </AnimatePresence>
+
+ {/* Form Analysis Popup (overlays on HOME after processing completes) */}
+ <AnimatePresence>
+ {showResultPopup && (
+  <FormAnalysisPopup
+   result={result}
+   analysisError={analysisError}
+   mediaBlobUrl={mediaBlobUrl}
+   onClose={() => { setShowResultPopup(false); setAnalysisError(null); prefetchProgress(); }}
+   onFixForm={() => {}}
+   onRetry={() => { setShowResultPopup(false); setAnalysisError(null); setView('CAMERA'); }}
+  />
+ )}
  </AnimatePresence>
 
  {/* Profile modals */}

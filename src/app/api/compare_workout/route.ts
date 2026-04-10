@@ -7,8 +7,12 @@ import { auth } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase";
 import { EXERCISES, getAnalysisPrompt, GENERIC_EXERCISE_PROMPT, type UserContext } from "@/lib/prompts";
 
-// Initialize Gemini SDK
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// ── Gemini client ────────────────────────────────────────────────────────
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY is not configured.");
+}
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 // --- Constants ---
 const MAX_VIDEO_DURATION_SECONDS = 60;
@@ -419,7 +423,7 @@ async function runBiomechanicsAnalysis(videoPart: Part, exercise: string, userCt
             return toBiomechanicsAnalysis(parsed);
         } catch (error) {
             lastError = error;
-    }
+        }
     }
 
     throw lastError instanceof Error ? lastError : new Error("Biomechanics analysis failed");
@@ -500,6 +504,7 @@ Rules:
 }
 
 export async function POST(req: NextRequest) {
+
     try {
         // Fetch user profile for personalized analysis (non-blocking — graceful fallback)
         let userCtx: UserContext | undefined;
@@ -544,7 +549,9 @@ export async function POST(req: NextRequest) {
         const arrayBuffer = await videoFile.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const mimeType = videoFile.type || "video/mp4";
-        try {
+
+        // Retry wrapper: if the first attempt hits a rate limit, rotate key and retry once
+        const attemptAnalysis = async (): Promise<NextResponse> => {
             console.log("[compare_workout] Starting Files API upload + embedding in parallel…");
             const blob = new Blob([buffer], { type: mimeType });
             const inlinePart = { inlineData: { mimeType, data: buffer.toString("base64") } };
@@ -676,13 +683,32 @@ export async function POST(req: NextRequest) {
                 reference_clips: refClipsUsed,
                 critique
             });
-        } catch (error: unknown) {
-            throw error;
-        }
+        };
+
+        return await attemptAnalysis();
 
     } catch (error: unknown) {
         console.error("Error processing workout:", error);
-        const message = error instanceof Error ? error.message : "Internal server error";
-        return NextResponse.json({ error: message }, { status: 500 });
+        const raw = error instanceof Error ? error.message : String(error);
+
+        // Map known API errors to user-friendly messages
+        let message: string;
+        let status = 500;
+        if (raw.includes('RESOURCE_EXHAUSTED') || raw.includes('429') || raw.includes('quota')) {
+            message = 'Our AI service is temporarily at capacity. Please try again in a minute.';
+            status = 429;
+        } else if (raw.includes('PERMISSION_DENIED') || raw.includes('403')) {
+            message = 'AI service configuration error. Please contact support.';
+            status = 403;
+        } else if (raw.includes('DEADLINE_EXCEEDED') || raw.includes('timeout') || raw.includes('AbortError')) {
+            message = 'Analysis timed out. Try a shorter clip or check your connection.';
+            status = 504;
+        } else if (raw.includes('File processing failed')) {
+            message = 'Video processing failed. Try a different format or shorter clip.';
+        } else {
+            message = 'Analysis failed. Please try again.';
+        }
+
+        return NextResponse.json({ error: message }, { status });
     }
 }

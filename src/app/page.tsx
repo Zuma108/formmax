@@ -10,7 +10,7 @@ import { AppleStoreButton, GooglePlayButton } from "@/components/ui/StoreButtons
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between pb-24 overflow-hidden bg-zinc-50 dark:bg-[#0A0A0B]">
+    <main className="flex min-h-screen flex-col items-center justify-between overflow-hidden bg-zinc-50 dark:bg-[#0A0A0B]">
       {/* 
         High-End UI Rule: No center bias Hero. Use asymmetric.
         No pure black, we use #0A0A0B (Zinc 950).
@@ -35,14 +35,14 @@ export default function Home() {
 
 function Nav() {
   return (
-    <nav className="w-full flex flex-col md:flex-row items-center justify-between pt-2 pb-4 md:pt-4 md:pb-4 gap-4 md:gap-0 border-b border-transparent">
-      <div className="flex items-center justify-center md:justify-start w-full md:w-auto">
-        <img src="/logo/Formax%20logo%20horizontal.png" alt="Form Max Logo" className="h-12 sm:h-[64px] w-auto object-contain dark:invert origin-center md:origin-left -ml-2" />
+    <nav className="w-full flex items-center justify-between pt-2 pb-4 md:pt-4 md:pb-4 border-b border-transparent">
+      <div className="flex items-center">
+        <img src="/logo/Formax%20logo%20horizontal.png" alt="Form Max Logo" className="h-12 sm:h-[64px] w-auto object-contain dark:invert -ml-2" />
       </div>
-      <div className="flex items-center justify-center md:justify-end gap-6 text-sm font-medium w-full md:w-auto">
+      <div className="hidden md:flex items-center justify-end gap-6 text-sm font-medium">
         <a href="#features" className="hidden lg:block text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors">Features</a>
         <a href="#testimonials" className="hidden lg:block text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors">Testimonials</a>
-        <div className="flex items-center justify-center gap-2 sm:gap-3 w-full sm:w-auto">
+        <div className="flex items-center gap-2 sm:gap-3">
           <AppleStoreButton size="sm" />
           <GooglePlayButton size="sm" />
         </div>

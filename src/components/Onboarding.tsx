@@ -5,9 +5,31 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useUser } from '@clerk/nextjs';
 import { 
   ArrowLeft, Shield, TrendingUp, Dumbbell, Brain, Zap, Volume2, 
-  CheckCircle, Crosshair, Activity, User, Mail, Camera, 
-  Smartphone, Users, AlertTriangle, Target, Settings, Gauge, Flame, Bell 
+  CheckCircle, User, Mail, Camera, 
+  Smartphone, Users, AlertTriangle, Target, Settings, Gauge, Flame, Bell,
+  GraduationCap, Move
 } from 'lucide-react';
+
+// Custom SVG icon components
+const BenchPressIcon = ({ className }: { className?: string; strokeWidth?: number }) => (
+  <img src="/assets/benchpress.svg" className={className} style={{ objectFit: 'contain' }} alt="Bench press" />
+);
+
+const BackIcon = ({ className }: { className?: string; strokeWidth?: number }) => (
+  <img src="/assets/backsvg.svg" className={className} style={{ objectFit: 'contain' }} alt="Lower back" />
+);
+
+const SquatIcon = ({ className }: { className?: string; strokeWidth?: number }) => (
+  <img src="/assets/squat.svg" className={className} style={{ objectFit: 'contain' }} alt="Squat" />
+);
+
+const DeadliftIcon = ({ className }: { className?: string; strokeWidth?: number }) => (
+  <img src="/assets/deadlift.svg" className={className} style={{ objectFit: 'contain' }} alt="Deadlift" />
+);
+
+const OverheadPressIcon = ({ className }: { className?: string; strokeWidth?: number }) => (
+  <img src="/assets/overheadpress.svg" className={className} style={{ objectFit: 'contain' }} alt="Overhead press" />
+);
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -134,7 +156,7 @@ const WeightRuler = ({ value, onChange, unit }: { value: number, onChange: (v: n
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(1);
-  const TOTAL_STEPS = 13;
+  const TOTAL_STEPS = 15;
   const { user } = useUser();
 
   const [answers, setAnswers] = useState({
@@ -404,7 +426,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     >
       {renderHeader("Lifting Experience", "How long have you been training?")}
       <div className="px-6 flex flex-col gap-4">
-        <OptionCard icon={Activity} title="Beginner (< 1 Year)" selected={answers.experience === 'Beginner'} onClick={() => setAnswers({...answers, experience: 'Beginner'})} />
+        <OptionCard icon={GraduationCap} title="Beginner (< 1 Year)" selected={answers.experience === 'Beginner'} onClick={() => setAnswers({...answers, experience: 'Beginner'})} />
         <OptionCard icon={TrendingUp} title="Intermediate (1-3 Years)" selected={answers.experience === 'Intermediate'} onClick={() => setAnswers({...answers, experience: 'Intermediate'})} />
         <OptionCard icon={Zap} title="Advanced (3+ Years)" selected={answers.experience === 'Advanced'} onClick={() => setAnswers({...answers, experience: 'Advanced'})} />
       </div>
@@ -444,10 +466,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     >
       {renderHeader("Lifting Preferences", "Which lifts do you want to perfect? (Select multiple)")}
       <div className="px-6 flex flex-col gap-4">
-        <OptionCard icon={Dumbbell} title="Squat & Lower Body" selected={answers.focusAreas.includes('Squat')} onClick={() => toggleArrayItem('focusAreas', 'Squat')} multi />
-        <OptionCard icon={Zap} title="Deadlift & Posterior Chain" selected={answers.focusAreas.includes('Deadlift')} onClick={() => toggleArrayItem('focusAreas', 'Deadlift')} multi />
-        <OptionCard icon={Crosshair} title="Bench Press & Chest" selected={answers.focusAreas.includes('Bench')} onClick={() => toggleArrayItem('focusAreas', 'Bench')} multi />
-        <OptionCard icon={TrendingUp} title="Overhead Press & Shoulders" selected={answers.focusAreas.includes('Overhead')} onClick={() => toggleArrayItem('focusAreas', 'Overhead')} multi />
+        <OptionCard icon={SquatIcon} title="Squat & Lower Body" selected={answers.focusAreas.includes('Squat')} onClick={() => toggleArrayItem('focusAreas', 'Squat')} multi />
+        <OptionCard icon={DeadliftIcon} title="Deadlift & Posterior Chain" selected={answers.focusAreas.includes('Deadlift')} onClick={() => toggleArrayItem('focusAreas', 'Deadlift')} multi />
+        <OptionCard icon={BenchPressIcon} title="Bench Press & Chest" selected={answers.focusAreas.includes('Bench')} onClick={() => toggleArrayItem('focusAreas', 'Bench')} multi />
+        <OptionCard icon={OverheadPressIcon} title="Overhead Press & Shoulders" selected={answers.focusAreas.includes('Overhead')} onClick={() => toggleArrayItem('focusAreas', 'Overhead')} multi />
       </div>
       <div className="mt-6">{renderFooter(answers.focusAreas.length === 0)}</div>
     </motion.div>
@@ -465,9 +487,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     >
       {renderHeader("Common Breakdowns", "What are you struggling with? (Select multiple)")}
       <div className="px-6 flex flex-col gap-4">
-        <OptionCard icon={Activity} title="Squat Butt Wink" selected={answers.weaknesses.includes('Butt Wink')} onClick={() => toggleArrayItem('weaknesses', 'Butt Wink')} multi />
+        <OptionCard icon={SquatIcon} title="Squat Butt Wink" selected={answers.weaknesses.includes('Butt Wink')} onClick={() => toggleArrayItem('weaknesses', 'Butt Wink')} multi />
         <OptionCard icon={AlertTriangle} title="Knee Cave (Valgus)" selected={answers.weaknesses.includes('Knee Cave')} onClick={() => toggleArrayItem('weaknesses', 'Knee Cave')} multi />
-        <OptionCard icon={Shield} title="Lower Back Rounding" selected={answers.weaknesses.includes('Lower Back Rounding')} onClick={() => toggleArrayItem('weaknesses', 'Lower Back Rounding')} multi />
+        <OptionCard icon={BackIcon} title="Lower Back Rounding" selected={answers.weaknesses.includes('Lower Back Rounding')} onClick={() => toggleArrayItem('weaknesses', 'Lower Back Rounding')} multi />
         <OptionCard icon={Target} title="Bar Path Deviation" selected={answers.weaknesses.includes('Bar Path Deviation')} onClick={() => toggleArrayItem('weaknesses', 'Bar Path Deviation')} multi />
       </div>
       <div className="mt-6">{renderFooter(answers.weaknesses.length === 0)}</div>
@@ -486,9 +508,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     >
       {renderHeader("Current Pain Points", "Any past or present injuries? (Select multiple)")}
       <div className="px-6 flex flex-col gap-4">
-        <OptionCard icon={Activity} title="Lower Back" selected={answers.injuries.includes('Lower Back')} onClick={() => toggleArrayItem('injuries', 'Lower Back')} multi />
-        <OptionCard icon={Activity} title="Knees" selected={answers.injuries.includes('Knees')} onClick={() => toggleArrayItem('injuries', 'Knees')} multi />
-        <OptionCard icon={Activity} title="Shoulders" selected={answers.injuries.includes('Shoulders')} onClick={() => toggleArrayItem('injuries', 'Shoulders')} multi />
+        <OptionCard icon={BackIcon} title="Lower Back" selected={answers.injuries.includes('Lower Back')} onClick={() => toggleArrayItem('injuries', 'Lower Back')} multi />
+        <OptionCard icon={Move} title="Knees" selected={answers.injuries.includes('Knees')} onClick={() => toggleArrayItem('injuries', 'Knees')} multi />
+        <OptionCard icon={OverheadPressIcon} title="Shoulders" selected={answers.injuries.includes('Shoulders')} onClick={() => toggleArrayItem('injuries', 'Shoulders')} multi />
         <OptionCard icon={CheckCircle} title="No injuries (Pain Free)" selected={answers.injuries.includes('None')} onClick={() => toggleArrayItem('injuries', 'None')} multi />
       </div>
       <div className="mt-6">{renderFooter(answers.injuries.length === 0)}</div>
@@ -516,9 +538,37 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     </motion.div>
   );
 
+  const renderInjuryFreeStats = () => (
+    <motion.div
+      key="step11"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      transition={SLIDE_TRANSITION}
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto overscroll-contain"
+      style={{ WebkitOverflowScrolling: 'touch' as any }}
+    >
+      {/* Header with back + progress */}
+      {renderHeader('Users stay injury-free 10x longer with the app than training alone')}
+
+      {/* Comparison visual */}
+      <div className="flex-1 flex items-center justify-center px-6 py-4">
+        <img
+          src="/assets/Comparison-graph.png"
+          alt="Without FORMAX 20% vs With FORMAX 2X injury-free comparison"
+          className="w-full max-w-sm object-contain"
+          draggable={false}
+        />
+      </div>
+
+      {/* Footer */}
+      <div className="pb-2">{renderFooter(false)}</div>
+    </motion.div>
+  );
+
   const renderStrictness = () => (
     <motion.div 
-      key="step11"
+      key="step12"
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -40 }}
@@ -538,7 +588,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   const renderPermissions = () => (
     <motion.div 
-      key="step12"
+      key="step13"
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -40 }}
@@ -546,7 +596,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       className="absolute inset-0 flex flex-col bg-white overflow-y-auto overscroll-contain"
       style={{ WebkitOverflowScrolling: 'touch' as any }}
     >
-      {renderHeader("Stay on Track", "Allow permissions for the best results.")}
+      {renderHeader("Stay on Track", "Allow audio permissions for the best results.")}
       <div className="flex-1 flex flex-col px-6 gap-6 pt-4">
         
         {/* Audio Feedback Split */}
@@ -573,40 +623,72 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </button>
           </div>
         </div>
+        
+      </div>
+      <div className="mt-4">{renderFooter(answers.audioFeedbackAllowed === null)}</div>
+    </motion.div>
+  );
 
-        {/* Push Notifications Split */}
-        <div className="bg-[#f4f4f5] rounded-[32px] p-6 w-full text-center shadow-sm">
-          <Bell className="w-8 h-8 mx-auto text-zinc-800 mb-3" />
-          <h3 className="font-bold text-xl px-4">Workout Summaries</h3>
-          <p className="text-zinc-500 text-sm mt-2 mb-6 px-2">
-            Receive push notifications when your AI analysis is ready.
-          </p>
-          <div className="flex items-center bg-white rounded-2xl border border-zinc-200 overflow-hidden shadow-sm">
-            <button 
-               onClick={() => setAnswers({...answers, notificationsAllowed: false})}
-               style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', minHeight: 52 }}
-               className={`flex-1 py-4 text-center font-medium transition-colors border-r border-zinc-200 ${answers.notificationsAllowed === false ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-500 active:bg-zinc-50'}`}
+  const renderNotificationPermission = () => (
+    <motion.div 
+      key="step14"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      transition={SLIDE_TRANSITION}
+      className="absolute inset-0 flex flex-col bg-white overflow-y-auto overscroll-contain"
+      style={{ WebkitOverflowScrolling: 'touch' as any }}
+    >
+      {renderHeader("Reach your goals with notifications")}
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 -mt-8">
+        {/* Faux iOS notification dialog */}
+        <div className="w-full max-w-[320px] bg-[#f4f4f5] rounded-3xl overflow-hidden shadow-sm">
+          <div className="px-8 pt-8 pb-6">
+            <p className="text-xl font-bold text-zinc-900 text-center leading-snug">
+              FormAX would like to send you Notifications
+            </p>
+          </div>
+          <div className="flex border-t border-zinc-300">
+            <button
+              onClick={() => setAnswers({ ...answers, notificationsAllowed: false })}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', minHeight: 52 }}
+              className={`flex-1 py-4 text-center font-medium text-[17px] transition-colors border-r border-zinc-300 ${
+                answers.notificationsAllowed === false
+                  ? 'bg-zinc-200 text-zinc-900'
+                  : 'text-zinc-600 active:bg-zinc-200'
+              }`}
             >
-              Don't Allow
+              Don&apos;t Allow
             </button>
-            <button 
-               onClick={() => setAnswers({...answers, notificationsAllowed: true})}
-               style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', minHeight: 52 }}
-               className={`flex-1 py-4 text-center font-semibold transition-colors ${answers.notificationsAllowed === true ? 'bg-zinc-900 text-white' : 'text-zinc-900 active:bg-zinc-50'}`}
+            <button
+              onClick={() => setAnswers({ ...answers, notificationsAllowed: true })}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', minHeight: 52 }}
+              className={`flex-1 py-4 text-center font-semibold text-[17px] transition-colors ${
+                answers.notificationsAllowed === true
+                  ? 'bg-[#18181b] text-white'
+                  : 'text-zinc-900 active:bg-zinc-200'
+              }`}
             >
               Allow
             </button>
           </div>
         </div>
-        
+
+        {/* Pointing hand emoji nudge */}
+        <div className="mt-3 ml-16 text-4xl select-none" aria-hidden="true">
+          👆
+        </div>
       </div>
-      <div className="mt-4">{renderFooter(answers.audioFeedbackAllowed === null || answers.notificationsAllowed === null)}</div>
+
+      {/* Continue is always enabled — notifications must be optional per Apple guidelines */}
+      <div>{renderFooter(false)}</div>
     </motion.div>
   );
 
   const renderFinal = () => (
     <motion.div 
-      key="step13"
+      key="step15"
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -40 }}
@@ -618,7 +700,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           <div className="w-64 h-64 rounded-full bg-gradient-to-br from-zinc-50 via-zinc-100 to-zinc-50 flex items-center justify-center mb-8 relative">
              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9IiNkNGQ0ZDgiLz48L3N2Zz4=')] opacity-50 [mask-image:radial-gradient(circle_at_center,black,transparent)]" />
              <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200 relative z-10 z-[20] rotate-[-5deg]">
-               <Activity strokeWidth={2.5} className="w-16 h-16 text-zinc-900" />
+               <img src="/logo/Formax logo.png" className="w-16 h-16 object-contain" alt="FormMax" />
              </div>
              <div className="absolute top-10 right-14 w-3 h-3 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '100ms'}} />
              <div className="absolute bottom-20 left-12 w-2 h-2 bg-zinc-800 rounded-full animate-bounce" style={{ animationDelay: '300ms'}} />
@@ -690,9 +772,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         {step === 8 && renderWeaknesses()}
         {step === 9 && renderInjuries()}
         {step === 10 && renderMotivation()}
-        {step === 11 && renderStrictness()}
-        {step === 12 && renderPermissions()}
-        {step === 13 && renderFinal()}
+        {step === 11 && renderInjuryFreeStats()}
+        {step === 12 && renderStrictness()}
+        {step === 13 && renderPermissions()}
+        {step === 14 && renderNotificationPermission()}
+        {step === 15 && renderFinal()}
       </AnimatePresence>
     </div>
   );

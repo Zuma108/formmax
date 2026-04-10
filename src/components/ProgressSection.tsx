@@ -50,6 +50,9 @@ interface Props {
   weaknesses?: string[] | null;
   injuries?: string[] | null;
   experience?: string | null;
+  prefetchedStats?: Stats | null;
+  prefetchedWeightLogs?: WeightLog[] | null;
+  prefetchedPhotos?: Photo[] | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -60,20 +63,51 @@ function scoreColor(score: number) {
   return { text: 'text-red-500', ring: '#dc2626', glow: '#ef4444', bg: 'bg-red-50', border: 'border-red-100' };
 }
 
+function getScoreGradient(score: number) {
+  if (score < 40) return {
+    stops: [{ offset: "0%", color: "#b91c1c" }, { offset: "50%", color: "#dc2626" }, { offset: "100%", color: "#ef4444" }],
+    glow: "#ef4444",
+  };
+  if (score < 70) return {
+    stops: [{ offset: "0%", color: "#dc2626" }, { offset: "40%", color: "#ff6a00" }, { offset: "70%", color: "#ff9500" }, { offset: "100%", color: "#ffbe00" }],
+    glow: "#ff9500",
+  };
+  return {
+    stops: [{ offset: "0%", color: "#dc2626" }, { offset: "25%", color: "#ff6a00" }, { offset: "50%", color: "#ffbe00" }, { offset: "75%", color: "#4ade80" }, { offset: "100%", color: "#22c55e" }],
+    glow: "#22c55e",
+  };
+}
+
+let ringCounter = 0;
+
 function Ring({ score, size = 44, stroke = 4 }: { score: number; size?: number; stroke?: number }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ - (score / 100) * circ;
-  const color = scoreColor(score).ring;
+  const grad = getScoreGradient(score);
+  const [uid] = useState(() => `prog-ring-${ringCounter++}`);
+  const gradId = `grad-${uid}`;
+  const glowId = `glow-${uid}`;
   return (
-    <svg width={size} height={size} className="-rotate-90">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f4f4f5" strokeWidth={stroke} />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <defs>
+        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+          {grad.stops.map((s, i) => <stop key={i} offset={s.offset} stopColor={s.color} />)}
+        </linearGradient>
+        <filter id={glowId}>
+          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1a1a2e" strokeWidth={stroke} />
       <motion.circle
         cx={size / 2} cy={size / 2} r={r}
-        fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+        fill="none" stroke={`url(#${gradId})`} strokeWidth={stroke} strokeLinecap="round"
         initial={{ strokeDasharray: circ, strokeDashoffset: circ }}
         animate={{ strokeDashoffset: offset }}
         transition={{ duration: 1.2, ease: 'easeOut' }}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        filter={`url(#${glowId})`}
       />
     </svg>
   );
@@ -440,15 +474,16 @@ function AddPhotoModal({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function ProgressSection({ weightGoal, weightUnit = 'kg', currentWeight, focusAreas, weaknesses, injuries, experience }: Props) {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
-  const [photos, setPhotos] = useState<Photo[]>([]);
+export default function ProgressSection({ weightGoal, weightUnit = 'kg', currentWeight, focusAreas, weaknesses, injuries, experience, prefetchedStats, prefetchedWeightLogs, prefetchedPhotos }: Props) {
+  const hasPrefetch = prefetchedStats !== undefined;
+  const [stats, setStats] = useState<Stats | null>(prefetchedStats ?? null);
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>(prefetchedWeightLogs ?? []);
+  const [photos, setPhotos] = useState<Photo[]>(prefetchedPhotos ?? []);
   const [selectedRange, setSelectedRange] = useState('90 Days');
   const [showLogWeight, setShowLogWeight] = useState(false);
   const [showAddPhoto, setShowAddPhoto] = useState(false);
   const [activeJoint, setActiveJoint] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasPrefetch);
   const [heightCm, setHeightCm] = useState<number | null>(null);
   const [editingHeight, setEditingHeight] = useState(false);
   const [heightInput, setHeightInput] = useState('');
@@ -470,6 +505,7 @@ export default function ProgressSection({ weightGoal, weightUnit = 'kg', current
   };
 
   useEffect(() => {
+    if (hasPrefetch) return;
     let cancelled = false;
     const load = async () => {
       const [sRes, wRes, pRes] = await Promise.all([
@@ -485,7 +521,7 @@ export default function ProgressSection({ weightGoal, weightUnit = 'kg', current
     };
     load().catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, []);
+  }, [hasPrefetch]);
 
   const handleLogWeight = useCallback(async (kg: number, notes: string) => {
     const res = await fetch('/api/progress/weight', {

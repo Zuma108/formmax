@@ -82,7 +82,7 @@ export function ValueProp() {
           Form Max is exclusively available on mobile. Carry an elite strength coach in your pocket, right on the gym floor.
         </p>
 
-        <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
+        <div className="flex flex-row items-center gap-4 relative z-10">
           <AppleStoreButton />
           <GooglePlayButton />
         </div>

@@ -54,7 +54,7 @@ export function HeroSection() {
           Meet Form Max, the AI-powered app for perfecting your form. Upload a video of your lift, analyze your biomechanics, and get instant coaching feedback to optimize every rep.
         </p>
 
-        <div className="flex flex-col sm:flex-row items-center gap-4 pt-4 w-full justify-start">
+        <div className="flex flex-row items-center gap-4 pt-4 w-full justify-start">
           <AppleStoreButton />
           <GooglePlayButton />
         </div>
@@ -71,12 +71,12 @@ export function HeroSection() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-zinc-500/15 blur-[100px] pointer-events-none rounded-full" />
         
         {/* Container for the Hero Image */}
-        <div className="relative w-full max-w-md p-4 flex flex-col items-center justify-center">
-          <div className="relative w-full aspect-[4/5] flex items-center justify-center">
+        <div className="relative w-full max-w-3xl flex flex-col items-center justify-center">
+          <div className="relative w-full flex items-center justify-center">
             <img 
-              src="/assets/hero-section-image.webp" 
+              src="/assets/FORMAX-SHOWCASE.png" 
               alt="Live Form Analysis" 
-              className="w-full h-full object-contain"
+              className="w-full h-auto object-contain"
             />
           </div>
         </div>
